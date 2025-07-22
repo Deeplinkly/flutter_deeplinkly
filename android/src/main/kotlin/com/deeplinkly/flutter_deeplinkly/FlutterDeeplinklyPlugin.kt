@@ -67,6 +67,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
             Log.d("Deeplinkly", "📨 handleIntent called with: $intent")
 
             val data: Uri? = intent?.data ?: return
+            Log.d("Deeplinkly", "Data: " + data.toString())
             val clickId = data?.getQueryParameter("click_id") ?: return
             val context = activity ?: return
             val appInfo = context.packageManager.getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
