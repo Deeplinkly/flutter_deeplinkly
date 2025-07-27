@@ -19,9 +19,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_deeplinkly:
-    git:
-      url: https://github.com/deeplinkly/flutter_deeplinkly
+  flutter_deeplinkly: ^1.1.3
 ```
 
 ---
