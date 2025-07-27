@@ -11,8 +11,6 @@ Engineered for seamless integration and rich insights, Deeplinkly gives you more
 - ✅ Read API keys from native config (`AndroidManifest.xml`, `Info.plist`)
 - ✅ Automatically opens the app or fallback to store
 - ✅ Lightweight native plugin
-- ✅ Open-source and self-hostable
-
 ---
 
 ## 📦 Installation
