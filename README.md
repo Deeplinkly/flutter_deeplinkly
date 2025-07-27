@@ -1,7 +1,7 @@
 # Deeplinkly Flutter SDK
 
-**Deeplinkly** is a self-hosted, privacy-conscious deep linking and deferred deep linking service — a better alternative to Branch.io and AppsFlyer. This SDK enables seamless integration of Deeplinkly into your Flutter apps on both Android and iOS.
-
+**Deeplinkly** is a developer-first deep linking and deferred deep linking SaaS — a smarter, more affordable alternative to Branch.io and AppsFlyer.
+Engineered for seamless integration and rich insights, Deeplinkly gives you more actionable data than any other platform — without the complexity or bloated pricing.
 ---
 
 ## 🚀 Features
