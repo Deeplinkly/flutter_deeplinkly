@@ -21,7 +21,7 @@ Add to your `pubspec.yaml`:
 dependencies:
   flutter_deeplinkly:
     git:
-      url: https://github.com/sahilasopa/flutter_deeplinkly
+      url: https://github.com/deeplinkly/flutter_deeplinkly
 ```
 
 ---
