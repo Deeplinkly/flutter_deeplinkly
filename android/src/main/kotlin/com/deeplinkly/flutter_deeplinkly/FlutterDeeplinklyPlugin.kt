@@ -26,8 +26,57 @@ import android.os.Build
 import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.core.content.edit
+import android.content.IntentFilter
+
+fun getAppLinkHosts(context: Context): List<String> {
+    val hosts = mutableSetOf<String>()
+    val pm = context.packageManager
+
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
+        data = Uri.parse("https://example.com")
+    }
+
+    val resolveInfos = pm.queryIntentActivities(intent, PackageManager.GET_RESOLVED_FILTER)
+
+    for (info in resolveInfos) {
+        if (info.activityInfo.packageName != context.packageName) continue
+
+        val filter = info.filter ?: continue
+
+        val isAppLinkIntent = filter.hasAction(Intent.ACTION_VIEW) &&
+                filter.hasCategory(Intent.CATEGORY_DEFAULT) &&
+                filter.hasCategory(Intent.CATEGORY_BROWSABLE)
+
+        if (!isAppLinkIntent) continue
+
+        for (i in 0 until filter.countDataSchemes()) {
+            if (filter.getDataScheme(i) != "https") continue
+
+            for (j in 0 until filter.countDataAuthorities()) {
+                val host = filter.getDataAuthority(j)?.host
+                if (!host.isNullOrBlank()) {
+                    hosts.add(host)
+                }
+            }
+        }
+    }
+
+    return hosts.toList()
+}
+
 
 object ClipboardHandler {
+
+    private var cachedAppLinkDomains: List<String>? = null
+
+    private fun getCachedAppLinkDomains(context: Context): List<String> {
+        if (cachedAppLinkDomains == null) {
+            cachedAppLinkDomains = getAppLinkHosts(context)
+        }
+        return cachedAppLinkDomains ?: emptyList()
+    }
+
     fun checkClipboard(context: Context, channel: MethodChannel, apiKey: String) {
         try {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -39,18 +88,29 @@ object ClipboardHandler {
 
             val clip = clipboard.primaryClip ?: return
             val item = clip.getItemAt(0)
-            val text = item.text?.toString() ?: return
+            val text = item.text?.toString()?.trim() ?: return
 
-            // Example: only match if it starts with your domain
-            if (!text.startsWith("deeplinkly://")) {
+            val lowerText = text.lowercase()
+
+            val domains = getCachedAppLinkDomains(context)
+
+            val matched = domains.any { domain ->
+                lowerText.startsWith(domain) ||
+                        lowerText.startsWith("https://$domain") ||
+                        lowerText.startsWith("http://$domain")
+            }
+
+            if (!matched) {
+                Logger.d("Clipboard text does not match any known app link domain")
                 return
             }
 
             Logger.d("Found deep link in clipboard: $text")
 
-            val fakeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(text))
-            DeepLinkHandler.handleIntent(context, fakeIntent, channel, apiKey)
-            clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
+            val deepLinkIntent = Intent(Intent.ACTION_VIEW, Uri.parse(text))
+            DeepLinkHandler.handleIntent(context, deepLinkIntent, channel, apiKey)
+
+            clipboard.setPrimaryClip(ClipData.newPlainText("", "")) // clear clipboard
 
         } catch (e: Exception) {
             NetworkUtils.reportError(apiKey, "Clipboard fallback failed", e.stackTraceToString())
@@ -66,9 +126,10 @@ object DomainConfig {
     // Endpoints
     const val ENRICH_ENDPOINT = "$API_BASE_URL/api/v1/enrich"
     const val ERROR_ENDPOINT = "$API_BASE_URL/api/v1/sdk-error"
-    const val RESOLVE_CLICK_ENDPOINT= "$API_BASE_URL/api/v1/resolve"
+    const val RESOLVE_CLICK_ENDPOINT = "$API_BASE_URL/api/v1/resolve"
     const val RESOLVE_CLICK_WITH_CODE_ENDPOINT = "$API_BASE_URL/api/v1/resolve-click"
     const val MATCH_FP_ENDPOINT = "$API_BASE_URL/api/v1/match-fp"
+    const val GENERATE_LINK_ENDPOINT = "$API_BASE_URL/api/v1/generate-url"
 }
 
 object Logger {
@@ -217,6 +278,20 @@ object NetworkUtils {
         return Pair(response, JSONObject(response))
     }
 
+    fun generateLink(payload: Map<String, Any?>, apiKey: String): String {
+        val conn = openConnection(DomainConfig.GENERATE_LINK_ENDPOINT, apiKey).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            doOutput = true
+        }
+
+        val json = JSONObject(payload)
+        conn.outputStream.use { it.write(json.toString().toByteArray()) }
+
+        return conn.inputStream.bufferedReader().readText()
+    }
+
+
     fun extractParamsFromJson(json: JSONObject, clickId: String?): HashMap<String, Any?> {
         val params = json.optJSONObject("params") ?: JSONObject()
         return hashMapOf<String, Any?>().apply {
@@ -309,7 +384,7 @@ object InstallReferrerHandler {
                         }.start()
 
                     } else {
-                        if (false){
+                        if (false) {
                             // Fingerprint on android is a little ugly so its better to avoid it
                             val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
                             val hasRunFingerprintFlow = prefs.getBoolean("fingerprint_flow_ran", false)
@@ -460,7 +535,62 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "getPlatformVersion" -> result.success("Android ${Build.VERSION.RELEASE}")
+            "getPlatformVersion" -> {
+                result.success("Android ${Build.VERSION.RELEASE}")
+            }
+
+            "generateLink" -> {
+                try {
+                    val args = call.arguments as? Map<*, *> ?: return result.success(
+                        mapOf("success" to false, "error_code" to "INVALID", "error_message" to "Expected map")
+                    )
+
+                    val content = args["content"] as? Map<*, *> ?: return result.success(
+                        mapOf("success" to false, "error_code" to "INVALID", "error_message" to "Missing content")
+                    )
+
+                    val options = args["options"] as? Map<*, *> ?: return result.success(
+                        mapOf("success" to false, "error_code" to "INVALID", "error_message" to "Missing options")
+                    )
+
+                    val payload = mutableMapOf<String, Any?>().apply {
+                        putAll(content.mapKeys { it.key.toString() })
+                        putAll(options.mapKeys { it.key.toString() })
+                    }
+
+                    Thread {
+                        try {
+                            val url = NetworkUtils.generateLink(payload, apiKey)
+                            activity?.runOnUiThread {
+                                result.success(
+                                    mapOf("success" to true, "url" to url)
+                                )
+                            }
+                        } catch (e: Exception) {
+                            Logger.e("generateLink failed", e)
+                            activity?.runOnUiThread {
+                                result.success(
+                                    mapOf(
+                                        "success" to false,
+                                        "error_code" to "LINK_ERROR",
+                                        "error_message" to e.message
+                                    )
+                                )
+                            }
+                        }
+                    }.start()
+                } catch (e: Exception) {
+                    result.success(
+                        mapOf(
+                            "success" to false,
+                            "error_code" to "LINK_ERROR",
+                            "error_message" to e.message
+                        )
+                    )
+                }
+            }
+
+
             else -> result.notImplemented()
         }
     }
