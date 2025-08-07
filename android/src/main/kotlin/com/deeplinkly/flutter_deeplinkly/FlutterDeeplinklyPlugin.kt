@@ -118,6 +118,45 @@ object ClipboardHandler {
     }
 }
 
+object EnrichmentSender {
+    fun sendOnce(
+        context: Context,
+        enrichmentData: Map<String, String?>,
+        source: String,
+        apiKey: String
+    ) {
+        val clickId = enrichmentData["click_id"]
+        val deviceId = enrichmentData["deeplinkly_device_id"]
+
+        if (!clickId.isNullOrEmpty() && !deviceId.isNullOrEmpty()) {
+            val payload = mapOf(
+                "click_id" to clickId,
+                "deeplinkly_device_id" to deviceId,
+                "android_reported_at" to enrichmentData["android_reported_at"]
+            )
+            NetworkUtils.sendEnrichment(payload, apiKey)
+            Logger.d("Sent attribution touch: $payload")
+            return
+        }
+
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        val enrichedKey = "${source}_enriched"
+        val alreadyEnriched = prefs.getBoolean(enrichedKey, false)
+
+        val hasAttributionData = listOf(
+            "click_id", "utm_source", "utm_medium", "utm_campaign", "gclid", "fbclid", "ttclid"
+        ).any { !enrichmentData[it].isNullOrBlank() }
+
+        if (!alreadyEnriched) {
+            Logger.d("Sending full enrichment for source: $source")
+            NetworkUtils.sendEnrichment(enrichmentData, apiKey)
+            prefs.edit().putBoolean(enrichedKey, true).apply()
+        } else {
+            Logger.d("Skipping full enrichment (already enriched or no data)")
+        }
+    }
+}
+
 
 object DomainConfig {
     // Primary API domain
@@ -138,6 +177,17 @@ object Logger {
     fun d(msg: String) = Log.d(TAG, "✅ $msg")
     fun w(msg: String) = Log.w(TAG, "⚠️ $msg")
     fun e(msg: String, e: Throwable? = null) = Log.e(TAG, "❌ $msg", e)
+}
+
+object DeviceIdManager {
+    private const val DEVICE_ID_KEY = "deeplinkly_device_id"
+
+    fun getOrCreateDeviceId(context: Context): String {
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        return prefs.getString(DEVICE_ID_KEY, null) ?: UUID.randomUUID().toString().also {
+            prefs.edit().putString(DEVICE_ID_KEY, it).apply()
+        }
+    }
 }
 
 object EnrichmentUtils {
@@ -174,6 +224,10 @@ object EnrichmentUtils {
     fun collect(context: Context): Map<String, String?> {
         val pm = context.packageManager
         val pkg = context.packageName
+        val base = mutableMapOf<String, String?>()
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        base["deeplinkly_device_id"] = DeviceIdManager.getOrCreateDeviceId(context)
+        base.putAll(collectFingerprint(context))
 
         val versionInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
@@ -389,7 +443,8 @@ object InstallReferrerHandler {
                                 activity.runOnUiThread {
                                     channel.invokeMethod("onDeepLink", dartMap)
                                 }
-                                NetworkUtils.sendEnrichment(enrichmentData, apiKey)
+
+                                EnrichmentSender.sendOnce(context, enrichmentData, "install_referrer", apiKey)
                             } catch (e: Exception) {
                                 NetworkUtils.reportError(apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
                             }
@@ -458,7 +513,7 @@ object DeepLinkHandler {
                     (context as? Activity)?.runOnUiThread {
                         channel.invokeMethod("onDeepLink", dartMap)
                     }
-                    NetworkUtils.sendEnrichment(enrichmentData, apiKey)
+                    EnrichmentSender.sendOnce(context, enrichmentData, "deep_link", apiKey)
                 } catch (e: Exception) {
                     NetworkUtils.reportError(apiKey, "resolve exception", e.stackTraceToString(), clickId)
                 }
