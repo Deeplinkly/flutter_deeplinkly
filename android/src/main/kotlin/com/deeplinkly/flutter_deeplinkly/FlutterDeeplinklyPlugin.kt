@@ -65,6 +65,61 @@ fun getAppLinkHosts(context: Context): List<String> {
     return hosts.toList()
 }
 
+object SdkRetryQueue {
+    private const val KEY = "sdk_retry_queue"
+    private const val MAX_QUEUE_SIZE = 50
+
+    fun enqueue(context: Context, payload: JSONObject, type: String) {
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        val current = getQueue(context).toMutableList()
+
+        val wrapped = JSONObject().apply {
+            put("type", type)
+            put("payload", payload.toString())
+        }
+
+        current.add(wrapped.toString())
+        if (current.size > MAX_QUEUE_SIZE) current.removeAt(0)
+
+        prefs.edit().putStringSet(KEY, current.toSet()).apply()
+    }
+
+    fun getQueue(context: Context): List<String> {
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        return prefs.getStringSet(KEY, emptySet())?.toList() ?: emptyList()
+    }
+
+    fun remove(context: Context, json: String) {
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        val current = getQueue(context).toMutableSet()
+        current.remove(json)
+        prefs.edit().putStringSet(KEY, current).apply()
+    }
+
+    fun retryAll(context: Context, apiKey: String) {
+        for (json in getQueue(context)) {
+            try {
+                val obj = JSONObject(json)
+                val type = obj.getString("type")
+                val payloadStr = obj.getString("payload")
+                val payload = JSONObject(payloadStr)
+
+                when (type) {
+                    "enrichment" -> NetworkUtils.sendEnrichmentNow(payload, apiKey)
+                    "error" -> NetworkUtils.sendErrorNow(payload, apiKey)
+                    else -> Logger.w("Unknown SDK retry type: $type")
+                }
+
+                remove(context, json)
+            } catch (e: Exception) {
+                Logger.e("Retry failed for $json", e)
+                // Keep in queue
+            }
+        }
+    }
+}
+
+
 
 object ClipboardHandler {
 
@@ -226,6 +281,8 @@ object EnrichmentUtils {
         val pkg = context.packageName
         val base = mutableMapOf<String, String?>()
         val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        val customUserId = prefs.getString("custom_user_id", null)
+        base["custom_user_id"] = customUserId
         base["deeplinkly_device_id"] = DeviceIdManager.getOrCreateDeviceId(context)
         base.putAll(collectFingerprint(context))
 
@@ -292,9 +349,22 @@ object EnrichmentUtils {
         base["screen_height"] = screenHeight.toString()
         base["pixel_ratio"] = pixelRatio.toString()
 
-        // Timestamps
+        val packageInfo = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+        } catch (e: Exception) {
+            null
+        }
         base["last_opened_at"] = formatToIso8601(currentTime)
-        base["installed_at"] = formatToIso8601(currentTime) // Adjust if you have a real install time
+        val installTimeMillis = packageInfo?.firstInstallTime ?: System.currentTimeMillis()
+        base["installed_at"] = formatToIso8601(installTimeMillis)
 
         // User agent approximation
         base["user_agent"] =
@@ -385,27 +455,56 @@ object NetworkUtils {
             }
             val json = JSONObject(data.filterValues { it != null })
             conn.outputStream.use { it.write(json.toString().toByteArray()) }
+
+            if (conn.responseCode != 200) {
+                throw Exception("Non-200 response: ${conn.responseCode}")
+            }
+
         } catch (e: Exception) {
-            Logger.e("Enrichment failed", e)
+            Logger.e("Enrichment failed, queueing", e)
+            val json = JSONObject(data.filterValues { it != null })
+            SdkRetryQueue.enqueue(DeeplinklyContext.app, json, "enrichment")
         }
     }
 
+    fun sendEnrichmentNow(payload: JSONObject, apiKey: String) {
+        val conn = openConnection(DomainConfig.ENRICH_ENDPOINT, apiKey).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            doOutput = true
+        }
+        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+        if (conn.responseCode != 200) throw Exception("Non-200 enrichment response: ${conn.responseCode}")
+    }
+
+
     fun reportError(apiKey: String, message: String, stack: String, clickId: String? = null) {
         try {
-            val conn = openConnection(DomainConfig.ERROR_ENDPOINT, apiKey).apply {
-                requestMethod = "POST"
-                setRequestProperty("Content-Type", "application/json")
-                doOutput = true
-            }
             val payload = JSONObject().apply {
                 put("message", message)
                 put("stack", stack)
                 clickId?.let { put("click_id", it) }
             }
-            conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+            sendErrorNow(payload, apiKey)
         } catch (e: Exception) {
-            Logger.e("Error reporting failed", e)
+            Logger.e("Error reporting failed, queueing", e)
+            val payload = JSONObject().apply {
+                put("message", message)
+                put("stack", stack)
+                clickId?.let { put("click_id", it) }
+            }
+            SdkRetryQueue.enqueue(DeeplinklyContext.app, payload, "error")
         }
+    }
+
+    fun sendErrorNow(payload: JSONObject, apiKey: String) {
+        val conn = openConnection(DomainConfig.ERROR_ENDPOINT, apiKey).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            doOutput = true
+        }
+        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+        if (conn.responseCode != 200) throw Exception("Non-200 error report response: ${conn.responseCode}")
     }
 
     private fun openConnection(url: String, apiKey: String): HttpURLConnection {
@@ -615,6 +714,13 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                 }
             }
 
+            "setCustomUserId" -> {
+                val userId = call.argument<String>("user_id")
+                val prefs = activity?.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+                prefs?.edit()?.putString("custom_user_id", userId)?.apply()
+                result.success(true)
+            }
+
 
             else -> result.notImplemented()
         }
@@ -646,6 +752,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
 
             InstallReferrerHandler.checkInstallReferrer(context, activity!!, channel, apiKey)
             ClipboardHandler.checkClipboard(context, channel, apiKey)
+            SdkRetryQueue.retryAll(context, apiKey)
 
         } catch (e: Exception) {
             NetworkUtils.reportError(apiKey, "Plugin startup failure", e.stackTraceToString())

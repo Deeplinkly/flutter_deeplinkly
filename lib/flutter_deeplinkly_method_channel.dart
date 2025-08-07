@@ -15,4 +15,9 @@ class MethodChannelFlutterDeeplinkly extends FlutterDeeplinklyPlatform {
         await methodChannel.invokeMethod<String>('getPlatformVersion');
     return version;
   }
+
+  Future<void> setCustomUserId(String userId) async {
+    await methodChannel.invokeMethod("setCustomUserId", {"user_id": userId});
+  }
+
 }
