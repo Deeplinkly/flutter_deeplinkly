@@ -353,28 +353,40 @@ object InstallReferrerHandler {
             override fun onInstallReferrerSetupFinished(responseCode: Int) {
                 if (responseCode == InstallReferrerResponse.OK) {
                     val rawReferrer = referrerClient.installReferrer.installReferrer
-                    val clickId = "https://dummy?$rawReferrer".toUri().getQueryParameter("click_id")
+                    val parsedReferrer = "https://dummy?$rawReferrer".toUri()
+
+                    val clickId = parsedReferrer.getQueryParameter("click_id")
+
+                    val enrichmentData = try {
+                        EnrichmentUtils.collect(context).toMutableMap()
+                    } catch (e: Exception) {
+                        NetworkUtils.reportError(apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
+                        mutableMapOf()
+                    }
+
+                    // Add basic enrichment
+                    enrichmentData["install_referrer"] = rawReferrer
+                    enrichmentData["android_reported_at"] = System.currentTimeMillis().toString()
+
+                    // Add standard UTM / Ad attribution parameters
+                    enrichmentData["click_id"] = clickId
+                    enrichmentData["utm_source"] = parsedReferrer.getQueryParameter("utm_source")
+                    enrichmentData["utm_medium"] = parsedReferrer.getQueryParameter("utm_medium")
+                    enrichmentData["utm_campaign"] = parsedReferrer.getQueryParameter("utm_campaign")
+                    enrichmentData["utm_term"] = parsedReferrer.getQueryParameter("utm_term")
+                    enrichmentData["utm_content"] = parsedReferrer.getQueryParameter("utm_content")
+                    enrichmentData["gclid"] = parsedReferrer.getQueryParameter("gclid")
+                    enrichmentData["fbclid"] = parsedReferrer.getQueryParameter("fbclid")
+                    enrichmentData["ttclid"] = parsedReferrer.getQueryParameter("ttclid")
 
                     if (!clickId.isNullOrEmpty()) {
-                        // ✅ CLICK ID FLOW
-                        val enrichmentData = try {
-                            EnrichmentUtils.collect(context).toMutableMap()
-                        } catch (e: Exception) {
-                            NetworkUtils.reportError(apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
-                            mutableMapOf()
-                        }
-
-                        enrichmentData["click_id"] = clickId
-                        enrichmentData["install_referrer"] = rawReferrer
-                        enrichmentData["android_reported_at"] = System.currentTimeMillis().toString()
-
                         Thread {
                             try {
                                 val (response, json) = NetworkUtils.resolveClick(
                                     "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=$clickId", apiKey
                                 )
                                 val dartMap = NetworkUtils.extractParamsFromJson(json, clickId)
-                                activity?.runOnUiThread {
+                                activity.runOnUiThread {
                                     channel.invokeMethod("onDeepLink", dartMap)
                                 }
                                 NetworkUtils.sendEnrichment(enrichmentData, apiKey)
@@ -382,73 +394,9 @@ object InstallReferrerHandler {
                                 NetworkUtils.reportError(apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
                             }
                         }.start()
-
                     } else {
-                        if (false) {
-                            // Fingerprint on android is a little ugly so its better to avoid it
-                            val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
-                            val hasRunFingerprintFlow = prefs.getBoolean("fingerprint_flow_ran", false)
-
-                            if (hasRunFingerprintFlow) {
-                                Logger.d("Fingerprint flow already run before, skipping.")
-                                return
-                            }
-
-                            Logger.d("No click_id found, running fingerprint fallback (first time)")
-
-                            prefs.edit { putBoolean("fingerprint_flow_ran", true) }
-
-                            val fingerprintData: MutableMap<String, String?> = try {
-                                EnrichmentUtils.collectFingerprint(context).toMutableMap().apply {
-                                    this["install_referrer"] = rawReferrer
-                                    this["android_reported_at"] = System.currentTimeMillis().toString()
-                                }
-                            } catch (e: Exception) {
-                                NetworkUtils.reportError(apiKey, "fingerprint collection failed", e.stackTraceToString())
-                                return
-                            }
-
-
-                            Thread {
-                                Logger.d("Collected fingerprint data: ${fingerprintData}")
-                                Logger.d("Posting to match-fp endpoint...")
-                                try {
-                                    Logger.d("Thread started for match-fp")
-
-                                    val conn = URL(DomainConfig.MATCH_FP_ENDPOINT).openConnection() as HttpURLConnection
-                                    conn.requestMethod = "POST"
-                                    conn.setRequestProperty("Authorization", "Bearer $apiKey")
-                                    conn.setRequestProperty("Content-Type", "application/json")
-                                    conn.doOutput = true
-
-                                    val payload = JSONObject(fingerprintData)
-                                    Logger.d("Sending payload to match-fp: $payload")
-                                    conn.outputStream.use { it.write(payload.toString().toByteArray()) }
-
-                                    val responseText = conn.inputStream.bufferedReader().readText()
-                                    Logger.d("Received match-fp response: $responseText")
-                                    val json = JSONObject(responseText)
-
-                                    if (json.optBoolean("match", false)) {
-                                        val clickIdFromMatch = json.optString("click_id", null)
-                                        val dartMap = NetworkUtils.extractParamsFromJson(json, clickIdFromMatch)
-
-                                        activity?.runOnUiThread {
-                                            channel.invokeMethod("onDeepLink", dartMap)
-                                        }
-
-                                        NetworkUtils.sendEnrichment(fingerprintData, apiKey)
-                                    } else {
-                                        Logger.d("No fingerprint match found")
-                                    }
-                                } catch (e: Exception) {
-                                    Logger.e("fingerprint fallback failed", e)
-                                    NetworkUtils.reportError(apiKey, "fingerprint fallback failed", e.stackTraceToString())
-                                }
-                            }.start()
-                        }
+                        Logger.d("No click_id found in install referrer, skipping resolveClick")
                     }
-
                 } else {
                     Logger.w("InstallReferrer: code=$responseCode")
                 }
