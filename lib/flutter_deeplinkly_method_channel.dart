@@ -11,8 +11,7 @@ class MethodChannelFlutterDeeplinkly extends FlutterDeeplinklyPlatform {
 
   @override
   Future<String?> getPlatformVersion() async {
-    final version =
-        await methodChannel.invokeMethod<String>('getPlatformVersion');
+    final version = await methodChannel.invokeMethod<String>('getPlatformVersion');
     return version;
   }
 
@@ -20,4 +19,7 @@ class MethodChannelFlutterDeeplinkly extends FlutterDeeplinklyPlatform {
     await methodChannel.invokeMethod("setCustomUserId", {"user_id": userId});
   }
 
+  Future<void> setTrackingEnabled({bool enabled = true}) async {
+    await methodChannel.invokeMethod("disableTracking", {"disabled": !enabled});
+  }
 }

@@ -28,6 +28,20 @@ import android.provider.Settings
 import androidx.core.content.edit
 import android.content.IntentFilter
 
+object TrackingPreferences {
+    private const val TRACKING_DISABLED_KEY = "tracking_disabled"
+
+    fun isTrackingDisabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean(TRACKING_DISABLED_KEY, false)
+    }
+
+    fun setTrackingDisabled(context: Context, disabled: Boolean) {
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(TRACKING_DISABLED_KEY, disabled).apply()
+    }
+}
+
 suspend fun getAdvertisingId(context: Context): String? = withContext(Dispatchers.IO) {
     try {
         val info = AdvertisingIdClient.getAdvertisingIdInfo(context)
@@ -108,6 +122,10 @@ object SdkRetryQueue {
     }
 
     fun retryAll(context: Context, apiKey: String) {
+        if (TrackingPreferences.isTrackingDisabled(context)) {
+            Logger.d("Tracking is disabled. Skipping retry queue.")
+            return
+        }
         for (json in getQueue(context)) {
             try {
                 val obj = JSONObject(json)
@@ -190,6 +208,10 @@ object EnrichmentSender {
         source: String,
         apiKey: String
     ) {
+        if (TrackingPreferences.isTrackingDisabled(context)) {
+            Logger.d("Tracking is disabled. Skipping enrichment/reporting.")
+            return
+        }
         val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
         val clickId = enrichmentData["click_id"]
         val deviceId = enrichmentData["deeplinkly_device_id"]
@@ -492,6 +514,11 @@ object NetworkUtils {
 
 
     fun reportError(apiKey: String, message: String, stack: String, clickId: String? = null) {
+        if (TrackingPreferences.isTrackingDisabled(context)) {
+            Logger.d("Tracking is disabled. Skipping enrichment/reporting.")
+            return
+        }
+
         try {
             val payload = JSONObject().apply {
                 put("message", message)
@@ -535,6 +562,11 @@ object InstallReferrerHandler {
         apiKey: String
     ) {
         Logger.d("checkInstallReferrer()")
+        if (TrackingPreferences.isTrackingDisabled(context)) {
+            Logger.d("Tracking is disabled. Skipping enrichment/reporting.")
+            return
+        }
+
         val referrerClient = InstallReferrerClient.newBuilder(context).build()
 
         referrerClient.startConnection(object : InstallReferrerStateListener {
@@ -729,6 +761,16 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                     )
                 }
             }
+
+            "disableTracking" -> {
+                val disabled = call.argument<Boolean>("disabled") ?: false
+                val context = activity?.applicationContext
+                if (context != null) {
+                    TrackingPreferences.setTrackingDisabled(context, disabled)
+                }
+                result.success(true)
+            }
+
 
             "setCustomUserId" -> {
                 val userId = call.argument<String>("user_id")
