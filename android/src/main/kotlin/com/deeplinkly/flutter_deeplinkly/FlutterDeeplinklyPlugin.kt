@@ -332,7 +332,20 @@ object NetworkUtils {
         return Pair(response, JSONObject(response))
     }
 
-    fun generateLink(payload: Map<String, Any?>, apiKey: String): String {
+    fun JSONObject.toMap(): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
+        keys().forEach { key ->
+            var value = this[key]
+            if (value is JSONObject) {
+                value = value.toMap()
+            }
+            map[key] = value
+        }
+        return map
+    }
+
+
+    fun generateLink(payload: Map<String, Any?>, apiKey: String): Map<String, Any?> {
         val conn = openConnection(DomainConfig.GENERATE_LINK_ENDPOINT, apiKey).apply {
             requestMethod = "POST"
             setRequestProperty("Content-Type", "application/json")
@@ -342,7 +355,16 @@ object NetworkUtils {
         val json = JSONObject(payload)
         conn.outputStream.use { it.write(json.toString().toByteArray()) }
 
-        return conn.inputStream.bufferedReader().readText()
+        val responseCode = conn.responseCode
+        val responseBody = try {
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "No error body"
+        }
+
+        // Parse the response into a Map
+        val jsonResponse = JSONObject(responseBody)
+        return jsonResponse.toMap()
     }
 
 
