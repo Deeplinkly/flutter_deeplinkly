@@ -28,6 +28,17 @@ import android.provider.Settings
 import androidx.core.content.edit
 import android.content.IntentFilter
 
+suspend fun getAdvertisingId(context: Context): String? = withContext(Dispatchers.IO) {
+    try {
+        val info = AdvertisingIdClient.getAdvertisingIdInfo(context)
+        if (!info.isLimitAdTrackingEnabled) info.id else null
+    } catch (e: Exception) {
+        Logger.w("Failed to get Advertising ID: ${e.message}")
+        null
+    }
+}
+
+
 fun getAppLinkHosts(context: Context): List<String> {
     val hosts = mutableSetOf<String>()
     val pm = context.packageManager
@@ -120,7 +131,6 @@ object SdkRetryQueue {
 }
 
 
-
 object ClipboardHandler {
 
     private var cachedAppLinkDomains: List<String>? = null
@@ -174,40 +184,46 @@ object ClipboardHandler {
 }
 
 object EnrichmentSender {
-    fun sendOnce(
+    suspend fun sendOnce(
         context: Context,
-        enrichmentData: Map<String, String?>,
+        enrichmentData: MutableMap<String, String?>,
         source: String,
         apiKey: String
     ) {
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
         val clickId = enrichmentData["click_id"]
         val deviceId = enrichmentData["deeplinkly_device_id"]
 
-        if (!clickId.isNullOrEmpty() && !deviceId.isNullOrEmpty()) {
-            val payload = mapOf(
-                "click_id" to clickId,
-                "deeplinkly_device_id" to deviceId,
-                "android_reported_at" to enrichmentData["android_reported_at"]
-            )
-            NetworkUtils.sendEnrichment(payload, apiKey)
-            Logger.d("Sent attribution touch: $payload")
-            return
-        }
-
-        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        // Check for already enriched
         val enrichedKey = "${source}_enriched"
         val alreadyEnriched = prefs.getBoolean(enrichedKey, false)
+
+        // Attach advertising_id if needed
+        if (enrichmentData["advertising_id"].isNullOrEmpty()) {
+            val cachedAdId = prefs.getString("advertising_id", null)
+            if (!cachedAdId.isNullOrEmpty()) {
+                enrichmentData["advertising_id"] = cachedAdId
+                Logger.d("Using cached advertising_id: $cachedAdId")
+            } else {
+                val fetchedAdId = getAdvertisingId(context)
+                if (!fetchedAdId.isNullOrEmpty()) {
+                    enrichmentData["advertising_id"] = fetchedAdId
+                    prefs.edit().putString("advertising_id", fetchedAdId).apply()
+                    Logger.d("Fetched advertising_id: $fetchedAdId")
+                }
+            }
+        }
 
         val hasAttributionData = listOf(
             "click_id", "utm_source", "utm_medium", "utm_campaign", "gclid", "fbclid", "ttclid"
         ).any { !enrichmentData[it].isNullOrBlank() }
 
-        if (!alreadyEnriched) {
-            Logger.d("Sending full enrichment for source: $source")
+        if (!alreadyEnriched && hasAttributionData) {
+            Logger.d("Sending enrichment for source: $source")
             NetworkUtils.sendEnrichment(enrichmentData, apiKey)
             prefs.edit().putBoolean(enrichedKey, true).apply()
         } else {
-            Logger.d("Skipping full enrichment (already enriched or no data)")
+            Logger.d("Skipping enrichment: already sent or no attribution data")
         }
     }
 }
@@ -370,9 +386,6 @@ object EnrichmentUtils {
         base["user_agent"] =
             "Mozilla/5.0 (Linux; Android ${Build.VERSION.RELEASE}; ${Build.MODEL}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36"
 
-        // Required but currently unset fields
-        base["advertising_id"] = "" // You can fetch using Google Play Services ID APIs if needed
-        base["vendor_id"] = "" // Optional, usually not relevant on Android
 
         // Hardware fingerprint
         val hardwareFingerprint = generateHardwareFingerprint(
@@ -564,8 +577,9 @@ object InstallReferrerHandler {
                                 activity.runOnUiThread {
                                     channel.invokeMethod("onDeepLink", dartMap)
                                 }
-
-                                EnrichmentSender.sendOnce(context, enrichmentData, "install_referrer", apiKey)
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    EnrichmentSender.sendOnce(context, enrichmentData, "install_referrer", apiKey)
+                                }
                             } catch (e: Exception) {
                                 NetworkUtils.reportError(apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
                             }
@@ -634,7 +648,9 @@ object DeepLinkHandler {
                     (context as? Activity)?.runOnUiThread {
                         channel.invokeMethod("onDeepLink", dartMap)
                     }
-                    EnrichmentSender.sendOnce(context, enrichmentData, "deep_link", apiKey)
+                    CoroutineScope(Dispatchers.Main).launch {
+                        EnrichmentSender.sendOnce(context, enrichmentData, "deep_link", apiKey)
+                    }
                 } catch (e: Exception) {
                     NetworkUtils.reportError(apiKey, "resolve exception", e.stackTraceToString(), clickId)
                 }
