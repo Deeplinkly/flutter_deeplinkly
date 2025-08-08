@@ -23,14 +23,17 @@ import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.core.content.edit
-import android.content.IntentFilter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.os.Handler
+import android.os.Looper
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineExceptionHandler
+
 
 import com.google.android.gms.ads.identifier.AdvertisingIdClient
 
@@ -40,16 +43,35 @@ object DeeplinklyContext {
     lateinit var app: Context
 }
 
+object SdkRuntime {
+    lateinit var ioScope: CoroutineScope
+    lateinit var mainHandler: Handler
+
+    fun ioLaunch(block: suspend CoroutineScope.() -> Unit) =
+        (if (::ioScope.isInitialized) ioScope else CoroutineScope(Dispatchers.IO)).launch(block = block)
+
+    fun postToFlutter(channel: MethodChannel, method: String, args: Any?) {
+        mainHandler.post {
+            try {
+                channel.invokeMethod(method, args)
+            } catch (e: Exception) {
+                Logger.w("invoke failed: ${e.message}")
+            }
+        }
+    }
+}
+
+
 object TrackingPreferences {
     private const val TRACKING_DISABLED_KEY = "tracking_disabled"
 
-    fun isTrackingDisabled(context: Context): Boolean {
-        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+    fun isTrackingDisabled(): Boolean {
+        val prefs = DeeplinklyContext.app.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
         return prefs.getBoolean(TRACKING_DISABLED_KEY, false)
     }
 
-    fun setTrackingDisabled(context: Context, disabled: Boolean) {
-        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+    fun setTrackingDisabled(disabled: Boolean) {
+        val prefs = DeeplinklyContext.app.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
         prefs.edit().putBoolean(TRACKING_DISABLED_KEY, disabled).apply()
     }
 }
@@ -106,9 +128,10 @@ object SdkRetryQueue {
     private const val KEY = "sdk_retry_queue"
     private const val MAX_QUEUE_SIZE = 50
 
-    fun enqueue(context: Context, payload: JSONObject, type: String) {
+    fun enqueue(payload: JSONObject, type: String) {
+        val context = DeeplinklyContext.app
         val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
-        val current = getQueue(context).toMutableList()
+        val current = getQueue().toMutableList()
 
         val wrapped = JSONObject().apply {
             put("type", type)
@@ -121,24 +144,27 @@ object SdkRetryQueue {
         prefs.edit().putStringSet(KEY, current.toSet()).apply()
     }
 
-    fun getQueue(context: Context): List<String> {
+    fun getQueue(): List<String> {
+        val context = DeeplinklyContext.app
         val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
         return prefs.getStringSet(KEY, emptySet())?.toList() ?: emptyList()
     }
 
-    fun remove(context: Context, json: String) {
+    fun remove(json: String) {
+        val context = DeeplinklyContext.app
         val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
-        val current = getQueue(context).toMutableSet()
+        val current = getQueue().toMutableSet()
         current.remove(json)
         prefs.edit().putStringSet(KEY, current).apply()
     }
 
-    fun retryAll(context: Context, apiKey: String) {
-        if (TrackingPreferences.isTrackingDisabled(context)) {
+    fun retryAll(apiKey: String) {
+        val context = DeeplinklyContext.app
+        if (TrackingPreferences.isTrackingDisabled()) {
             Logger.d("Tracking is disabled. Skipping retry queue.")
             return
         }
-        for (json in getQueue(context)) {
+        for (json in getQueue()) {
             try {
                 val obj = JSONObject(json)
                 val type = obj.getString("type")
@@ -151,7 +177,7 @@ object SdkRetryQueue {
                     else -> Logger.w("Unknown SDK retry type: $type")
                 }
 
-                remove(context, json)
+                remove(json)
             } catch (e: Exception) {
                 Logger.e("Retry failed for $json", e)
                 // Keep in queue
@@ -172,7 +198,8 @@ object ClipboardHandler {
         return cachedAppLinkDomains ?: emptyList()
     }
 
-    fun checkClipboard(context: Context, channel: MethodChannel, apiKey: String) {
+    fun checkClipboard(channel: MethodChannel, apiKey: String) {
+        val context = DeeplinklyContext.app
         try {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
 
@@ -220,7 +247,7 @@ object EnrichmentSender {
         source: String,
         apiKey: String
     ) {
-        if (TrackingPreferences.isTrackingDisabled(context)) {
+        if (TrackingPreferences.isTrackingDisabled()) {
             Logger.d("Tracking is disabled. Skipping enrichment/reporting.")
             return
         }
@@ -286,7 +313,8 @@ object Logger {
 object DeviceIdManager {
     private const val DEVICE_ID_KEY = "deeplinkly_device_id"
 
-    fun getOrCreateDeviceId(context: Context): String {
+    fun getOrCreateDeviceId(): String {
+        val context = DeeplinklyContext.app
         val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
         return prefs.getString(DEVICE_ID_KEY, null) ?: UUID.randomUUID().toString().also {
             prefs.edit().putString(DEVICE_ID_KEY, it).apply()
@@ -325,15 +353,16 @@ object EnrichmentUtils {
         return fingerprintString.hashCode().toString(16)
     }
 
-    fun collect(context: Context): Map<String, String?> {
+    fun collect(): Map<String, String?> {
+        val context = DeeplinklyContext.app
         val pm = context.packageManager
         val pkg = context.packageName
         val base = mutableMapOf<String, String?>()
         val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
         val customUserId = prefs.getString("custom_user_id", null)
         base["custom_user_id"] = customUserId
-        base["deeplinkly_device_id"] = DeviceIdManager.getOrCreateDeviceId(context)
-        base.putAll(collectFingerprint(context))
+        base["deeplinkly_device_id"] = DeviceIdManager.getOrCreateDeviceId()
+        base.putAll(collectFingerprint())
 
         val versionInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
@@ -383,7 +412,8 @@ object EnrichmentUtils {
         )
     }
 
-    fun collectFingerprint(context: Context): Map<String, String?> {
+    fun collectFingerprint(): Map<String, String?> {
+        val context = DeeplinklyContext.app
         val base = mutableMapOf<String, String?>()
 
         val displayMetrics = context.resources.displayMetrics
@@ -522,7 +552,7 @@ object NetworkUtils {
 
 
     fun reportError(context: Context, apiKey: String, message: String, stack: String, clickId: String? = null) {
-        if (TrackingPreferences.isTrackingDisabled(context)) {
+        if (TrackingPreferences.isTrackingDisabled()) {
             Logger.d("Tracking is disabled. Skipping enrichment/reporting.")
             return
         }
@@ -533,7 +563,14 @@ object NetworkUtils {
                 put("stack", stack)
                 clickId?.let { put("click_id", it) }
             }
-            sendErrorNow(payload, apiKey)
+            SdkRuntime.ioLaunch {
+                try {
+                    sendErrorNow(payload, apiKey)
+                } catch (e: Exception) {
+                    Logger.e("Error reporting failed, queueing", e)
+                    SdkRetryQueue.enqueue(DeeplinklyContext.app, payload, "error")
+                }
+            }
         } catch (e: Exception) {
             Logger.e("Error reporting failed, queueing", e)
             val payload = JSONObject().apply {
@@ -557,6 +594,8 @@ object NetworkUtils {
 
     private fun openConnection(url: String, apiKey: String): HttpURLConnection {
         return (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 15_000
             setRequestProperty("Authorization", "Bearer $apiKey")
         }
     }
@@ -570,7 +609,7 @@ object InstallReferrerHandler {
         apiKey: String
     ) {
         Logger.d("checkInstallReferrer()")
-        if (TrackingPreferences.isTrackingDisabled(context)) {
+        if (TrackingPreferences.isTrackingDisabled()) {
             Logger.d("Tracking is disabled. Skipping enrichment/reporting.")
             return
         }
@@ -586,7 +625,7 @@ object InstallReferrerHandler {
                     val clickId = parsedReferrer.getQueryParameter("click_id")
 
                     val enrichmentData = try {
-                        EnrichmentUtils.collect(context).toMutableMap()
+                        EnrichmentUtils.collect().toMutableMap()
                     } catch (e: Exception) {
                         NetworkUtils.reportError(context, apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
                         mutableMapOf()
@@ -608,22 +647,18 @@ object InstallReferrerHandler {
                     enrichmentData["ttclid"] = parsedReferrer.getQueryParameter("ttclid")
 
                     if (!clickId.isNullOrEmpty()) {
-                        Thread {
+                        SdkRuntime.ioLaunch {
                             try {
-                                val (response, json) = NetworkUtils.resolveClick(
+                                val (_, json) = NetworkUtils.resolveClick(
                                     "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=$clickId", apiKey
                                 )
                                 val dartMap = NetworkUtils.extractParamsFromJson(json, clickId)
-                                activity.runOnUiThread {
-                                    channel.invokeMethod("onDeepLink", dartMap)
-                                }
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    EnrichmentSender.sendOnce(context, enrichmentData, "install_referrer", apiKey)
-                                }
+                                SdkRuntime.postToFlutter(channel, "onDeepLink", dartMap)
+                                EnrichmentSender.sendOnce(context, enrichmentData, "install_referrer", apiKey)
                             } catch (e: Exception) {
                                 NetworkUtils.reportError(context, apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
                             }
-                        }.start()
+                        }
                     } else {
                         Logger.d("No click_id found in install referrer, skipping resolveClick")
                     }
@@ -664,7 +699,7 @@ object DeepLinkHandler {
             }
 
             val enrichmentData = try {
-                EnrichmentUtils.collect(context).toMutableMap()
+                EnrichmentUtils.collect().toMutableMap()
             } catch (e: Exception) {
                 NetworkUtils.reportError(context, apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
                 mutableMapOf()
@@ -680,21 +715,17 @@ object DeepLinkHandler {
                 "${DomainConfig.RESOLVE_CLICK_WITH_CODE_ENDPOINT}?code=$code"
             }
 
-            Thread {
+            SdkRuntime.ioLaunch {
                 try {
-                    val (response, json) = NetworkUtils.resolveClick(resolveUrl, apiKey)
+                    val (_, json) = NetworkUtils.resolveClick(resolveUrl, apiKey)
                     val dartMap = NetworkUtils.extractParamsFromJson(json, clickId)
                     dartMap["click_id"]?.let { enrichmentData["click_id"] = it.toString() }
-                    (context as? Activity)?.runOnUiThread {
-                        channel.invokeMethod("onDeepLink", dartMap)
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        EnrichmentSender.sendOnce(context, enrichmentData, "deep_link", apiKey)
-                    }
+                    SdkRuntime.postToFlutter(channel, "onDeepLink", dartMap)
+                    EnrichmentSender.sendOnce(context, enrichmentData, "deep_link", apiKey)
                 } catch (e: Exception) {
                     NetworkUtils.reportError(context, apiKey, "resolve exception", e.stackTraceToString(), clickId)
                 }
-            }.start()
+            }
 
         } catch (e: Exception) {
             NetworkUtils.reportError(context, apiKey, "handleIntent outer crash", e.stackTraceToString())
@@ -706,14 +737,54 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     private lateinit var channel: MethodChannel
     private var activity: Activity? = null
     private lateinit var apiKey: String
+    private var sdkEnabled = false
 
-    override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-        DeeplinklyContext.app = flutterPluginBinding.applicationContext
-        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "deeplinkly/channel")
-        channel.setMethodCallHandler(this)
+    private val coroutineErrorHandler = CoroutineExceptionHandler { _, e ->
+        try {
+            DeeplinklyContext.app.let { ctx ->
+                NetworkUtils.reportError(ctx, apiKey, "Coroutine crash", Log.getStackTraceString(e))
+            }
+        } catch (_: Exception) { /* swallow */
+        }
+        Logger.e("Coroutine crash", e)
     }
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    override fun onAttachedToEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
+        DeeplinklyContext.app = binding.applicationContext
+        channel = MethodChannel(binding.binaryMessenger, "deeplinkly/channel")
+        channel.setMethodCallHandler(this)
+
+        SdkRuntime.ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + coroutineErrorHandler)
+        SdkRuntime.mainHandler = Handler(Looper.getMainLooper())
+
+        sdkEnabled = try {
+            val appInfo = DeeplinklyContext.app.packageManager.getApplicationInfo(
+                DeeplinklyContext.app.packageName,
+                android.content.pm.PackageManager.GET_META_DATA
+            )
+            apiKey = appInfo.metaData?.getString("com.deeplinkly.sdk.api_key").orEmpty()
+            if (apiKey.isBlank()) {
+                Logger.e("Missing API key in AndroidManifest.xml (com.deeplinkly.sdk.api_key)")
+                false
+            } else true
+        } catch (e: Exception) {
+            Logger.e("Failed to read API key from manifest", e)
+            false
+        }
+    }
+
+
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (!sdkEnabled) {
+            result.success(mapOf(
+                "success" to false,
+                "error_code" to "SDK_DISABLED",
+                "error_message" to "Deeplinkly SDK is disabled (missing API key)."
+            ))
+            return
+        }
         when (call.method) {
             "getPlatformVersion" -> {
                 result.success("Android ${Build.VERSION.RELEASE}")
@@ -738,27 +809,20 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                         putAll(options.mapKeys { it.key.toString() })
                     }
 
-                    Thread {
+                    SdkRuntime.ioLaunch {
                         try {
                             val url = NetworkUtils.generateLink(payload, apiKey)
                             activity?.runOnUiThread {
-                                result.success(
-                                    mapOf("success" to true, "url" to url)
-                                )
+                                result.success(mapOf("success" to true, "url" to url))
                             }
                         } catch (e: Exception) {
                             Logger.e("generateLink failed", e)
                             activity?.runOnUiThread {
-                                result.success(
-                                    mapOf(
-                                        "success" to false,
-                                        "error_code" to "LINK_ERROR",
-                                        "error_message" to e.message
-                                    )
-                                )
+                                result.success(mapOf("success" to false, "error_code" to "LINK_ERROR", "error_message" to e.message))
                             }
                         }
-                    }.start()
+                    }
+
                 } catch (e: Exception) {
                     result.success(
                         mapOf(
@@ -774,7 +838,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                 val disabled = call.argument<Boolean>("disabled") ?: false
                 val context = activity?.applicationContext
                 if (context != null) {
-                    TrackingPreferences.setTrackingDisabled(context, disabled)
+                    TrackingPreferences.setTrackingDisabled(disabled)
                 }
                 result.success(true)
             }
@@ -795,19 +859,12 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         Logger.d("onAttachedToActivity")
         activity = binding.activity
+        if (!sdkEnabled) {
+            Logger.w("SDK disabled (missing API key). Skipping initialization.")
+            return
+        }
         val context = binding.activity.applicationContext
         try {
-            val appInfo = context.packageManager.getApplicationInfo(
-                context.packageName,
-                android.content.pm.PackageManager.GET_META_DATA
-            )
-            val key = appInfo.metaData.getString("com.deeplinkly.sdk.api_key")
-            if (key.isNullOrEmpty()) {
-                Logger.e("Missing API key in AndroidManifest.xml")
-                return
-            }
-            apiKey = key
-
             DeepLinkHandler.handleIntent(activity!!, activity!!.intent, channel, apiKey)
             binding.addOnNewIntentListener {
                 Logger.d("onNewIntent received")
@@ -816,8 +873,10 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
             }
 
             InstallReferrerHandler.checkInstallReferrer(context, activity!!, channel, apiKey)
-            ClipboardHandler.checkClipboard(context, channel, apiKey)
-            SdkRetryQueue.retryAll(context, apiKey)
+            ClipboardHandler.checkClipboard(channel, apiKey)
+            SdkRuntime.ioLaunch {
+                SdkRetryQueue.retryAll(apiKey)
+            }
 
         } catch (e: Exception) {
             NetworkUtils.reportError(context, apiKey, "Plugin startup failure", e.stackTraceToString())
@@ -839,5 +898,6 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
         Logger.d("onDetachedFromEngine")
         channel.setMethodCallHandler(null)
+        SdkRuntime.ioScope.cancel()
     }
 }
