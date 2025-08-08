@@ -260,7 +260,6 @@ object DomainConfig {
     const val ERROR_ENDPOINT = "$API_BASE_URL/api/v1/sdk-error"
     const val RESOLVE_CLICK_ENDPOINT = "$API_BASE_URL/api/v1/resolve"
     const val RESOLVE_CLICK_WITH_CODE_ENDPOINT = "$API_BASE_URL/api/v1/resolve-click"
-    const val MATCH_FP_ENDPOINT = "$API_BASE_URL/api/v1/match-fp"
     const val GENERATE_LINK_ENDPOINT = "$API_BASE_URL/api/v1/generate-url"
 }
 
