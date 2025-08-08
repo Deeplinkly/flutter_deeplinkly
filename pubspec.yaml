@@ -1,6 +1,6 @@
 name: flutter_deeplinkly
 description: A lightweight Flutter plugin for deep linking, deferred deep linking, install referrer tracking, and advanced attribution.
-version: 1.1.5
+version: 1.1.6
 homepage:
   https://github.com/deeplinkly/flutter_deeplinkly
 repository: https://github.com/deeplinkly/flutter_deeplinkly

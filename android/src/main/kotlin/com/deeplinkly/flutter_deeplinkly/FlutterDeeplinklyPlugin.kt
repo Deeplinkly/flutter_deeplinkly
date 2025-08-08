@@ -27,6 +27,18 @@ import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.core.content.edit
 import android.content.IntentFilter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+import com.google.android.gms.ads.identifier.AdvertisingIdClient
+
+import java.util.UUID
+
+object DeeplinklyContext {
+    lateinit var app: Context
+}
 
 object TrackingPreferences {
     private const val TRACKING_DISABLED_KEY = "tracking_disabled"
@@ -53,7 +65,7 @@ suspend fun getAdvertisingId(context: Context): String? = withContext(Dispatcher
 }
 
 
-fun getAppLinkHosts(context: Context): List<String> {
+fun retrieveAppLinkHosts(context: Context): List<String> {
     val hosts = mutableSetOf<String>()
     val pm = context.packageManager
 
@@ -155,7 +167,7 @@ object ClipboardHandler {
 
     private fun getCachedAppLinkDomains(context: Context): List<String> {
         if (cachedAppLinkDomains == null) {
-            cachedAppLinkDomains = getAppLinkHosts(context)
+            cachedAppLinkDomains = retrieveAppLinkHosts(context)
         }
         return cachedAppLinkDomains ?: emptyList()
     }
@@ -196,7 +208,7 @@ object ClipboardHandler {
             clipboard.setPrimaryClip(ClipData.newPlainText("", "")) // clear clipboard
 
         } catch (e: Exception) {
-            NetworkUtils.reportError(apiKey, "Clipboard fallback failed", e.stackTraceToString())
+            NetworkUtils.reportError(context, apiKey, "Clipboard fallback failed", e.stackTraceToString())
         }
     }
 }
@@ -372,7 +384,7 @@ object EnrichmentUtils {
     }
 
     fun collectFingerprint(context: Context): Map<String, String?> {
-        val base = collect(context).toMutableMap()
+        val base = mutableMapOf<String, String?>()
 
         val displayMetrics = context.resources.displayMetrics
         val screenWidth = displayMetrics.widthPixels
@@ -381,10 +393,10 @@ object EnrichmentUtils {
 
         val currentTime = System.currentTimeMillis()
 
-        // Add enriched display metrics
         base["screen_width"] = screenWidth.toString()
         base["screen_height"] = screenHeight.toString()
         base["pixel_ratio"] = pixelRatio.toString()
+        base["last_opened_at"] = formatToIso8601(currentTime)
 
         val packageInfo = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -399,16 +411,13 @@ object EnrichmentUtils {
         } catch (e: Exception) {
             null
         }
-        base["last_opened_at"] = formatToIso8601(currentTime)
-        val installTimeMillis = packageInfo?.firstInstallTime ?: System.currentTimeMillis()
+
+        val installTimeMillis = packageInfo?.firstInstallTime ?: currentTime
         base["installed_at"] = formatToIso8601(installTimeMillis)
 
-        // User agent approximation
         base["user_agent"] =
             "Mozilla/5.0 (Linux; Android ${Build.VERSION.RELEASE}; ${Build.MODEL}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36"
 
-
-        // Hardware fingerprint
         val hardwareFingerprint = generateHardwareFingerprint(
             platform = "android",
             screenWidth = screenWidth,
@@ -512,7 +521,7 @@ object NetworkUtils {
     }
 
 
-    fun reportError(apiKey: String, message: String, stack: String, clickId: String? = null) {
+    fun reportError(context: Context, apiKey: String, message: String, stack: String, clickId: String? = null) {
         if (TrackingPreferences.isTrackingDisabled(context)) {
             Logger.d("Tracking is disabled. Skipping enrichment/reporting.")
             return
@@ -579,7 +588,7 @@ object InstallReferrerHandler {
                     val enrichmentData = try {
                         EnrichmentUtils.collect(context).toMutableMap()
                     } catch (e: Exception) {
-                        NetworkUtils.reportError(apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
+                        NetworkUtils.reportError(context, apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
                         mutableMapOf()
                     }
 
@@ -612,7 +621,7 @@ object InstallReferrerHandler {
                                     EnrichmentSender.sendOnce(context, enrichmentData, "install_referrer", apiKey)
                                 }
                             } catch (e: Exception) {
-                                NetworkUtils.reportError(apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
+                                NetworkUtils.reportError(context, apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
                             }
                         }.start()
                     } else {
@@ -657,7 +666,7 @@ object DeepLinkHandler {
             val enrichmentData = try {
                 EnrichmentUtils.collect(context).toMutableMap()
             } catch (e: Exception) {
-                NetworkUtils.reportError(apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
+                NetworkUtils.reportError(context, apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
                 mutableMapOf()
             }
 
@@ -683,12 +692,12 @@ object DeepLinkHandler {
                         EnrichmentSender.sendOnce(context, enrichmentData, "deep_link", apiKey)
                     }
                 } catch (e: Exception) {
-                    NetworkUtils.reportError(apiKey, "resolve exception", e.stackTraceToString(), clickId)
+                    NetworkUtils.reportError(context, apiKey, "resolve exception", e.stackTraceToString(), clickId)
                 }
             }.start()
 
         } catch (e: Exception) {
-            NetworkUtils.reportError(apiKey, "handleIntent outer crash", e.stackTraceToString())
+            NetworkUtils.reportError(context, apiKey, "handleIntent outer crash", e.stackTraceToString())
         }
     }
 }
@@ -699,7 +708,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     private lateinit var apiKey: String
 
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-        Logger.d("onAttachedToEngine")
+        DeeplinklyContext.app = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "deeplinkly/channel")
         channel.setMethodCallHandler(this)
     }
@@ -786,9 +795,8 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         Logger.d("onAttachedToActivity")
         activity = binding.activity
-
+        val context = binding.activity.applicationContext
         try {
-            val context = binding.activity.applicationContext
             val appInfo = context.packageManager.getApplicationInfo(
                 context.packageName,
                 android.content.pm.PackageManager.GET_META_DATA
@@ -812,7 +820,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
             SdkRetryQueue.retryAll(context, apiKey)
 
         } catch (e: Exception) {
-            NetworkUtils.reportError(apiKey, "Plugin startup failure", e.stackTraceToString())
+            NetworkUtils.reportError(context, apiKey, "Plugin startup failure", e.stackTraceToString())
         }
     }
 
