@@ -48,7 +48,7 @@ object SdkRuntime {
     lateinit var mainHandler: Handler
 
     fun ioLaunch(block: suspend CoroutineScope.() -> Unit) =
-        (if (::ioScope.isInitialized) ioScope else CxoroutineScope(Dispatchers.IO)).launch(block = block)
+        (if (::ioScope.isInitialized) ioScope else CoroutineScope(Dispatchers.IO)).launch(block = block)
 
     fun postToFlutter(channel: MethodChannel, method: String, args: Any?) {
         mainHandler.post {
