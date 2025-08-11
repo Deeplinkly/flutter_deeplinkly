@@ -43,6 +43,32 @@ object DeeplinklyContext {
     lateinit var app: Context
 }
 
+object AttributionStore {
+    private const val KEY = "initial_attribution"
+
+    fun saveOnce(map: Map<String, String?>) {
+        val ctx = DeeplinklyContext.app
+        val prefs = ctx.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        if (!prefs.contains(KEY)) {
+            val json = JSONObject(map.filterValues { it != null }).toString()
+            prefs.edit().putString(KEY, json).apply()
+        }
+    }
+
+    fun get(): Map<String, String> {
+        val ctx = DeeplinklyContext.app
+        val prefs = ctx.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY, null) ?: return emptyMap()
+        return try {
+            val obj = JSONObject(raw)
+            buildMap {
+                obj.keys().forEach { k -> put(k, obj.optString(k, "")) }
+            }
+        } catch (_: Exception) { emptyMap() }
+    }
+}
+
+
 object SdkRuntime {
     lateinit var ioScope: CoroutineScope
     lateinit var mainHandler: Handler
@@ -296,7 +322,6 @@ object DomainConfig {
     const val ENRICH_ENDPOINT = "$API_BASE_URL/api/v1/enrich"
     const val ERROR_ENDPOINT = "$API_BASE_URL/api/v1/sdk-error"
     const val RESOLVE_CLICK_ENDPOINT = "$API_BASE_URL/api/v1/resolve"
-    const val RESOLVE_CLICK_WITH_CODE_ENDPOINT = "$API_BASE_URL/api/v1/resolve-click"
     const val GENERATE_LINK_ENDPOINT = "$API_BASE_URL/api/v1/generate-url"
 }
 
@@ -660,6 +685,23 @@ object InstallReferrerHandler {
                         enrichmentData["fbclid"] = parsedReferrer.getQueryParameter("fbclid")
                         enrichmentData["ttclid"] = parsedReferrer.getQueryParameter("ttclid")
 
+                        val initialAttribution = linkedMapOf<String, String?>(
+                            "source" to "install_referrer",
+                            "install_referrer" to rawReferrer,
+                            "utm_source" to parsedReferrer.getQueryParameter("utm_source"),
+                            "utm_medium" to parsedReferrer.getQueryParameter("utm_medium"),
+                            "utm_campaign" to parsedReferrer.getQueryParameter("utm_campaign"),
+                            "utm_term" to parsedReferrer.getQueryParameter("utm_term"),
+                            "utm_content" to parsedReferrer.getQueryParameter("utm_content"),
+                            "gclid" to parsedReferrer.getQueryParameter("gclid"),
+                            "fbclid" to parsedReferrer.getQueryParameter("fbclid"),
+                            "ttclid" to parsedReferrer.getQueryParameter("ttclid"),
+                            "click_id" to clickId,
+                            "deeplinkly_device_id" to enrichmentData["deeplinkly_device_id"],
+                            "advertising_id" to enrichmentData["advertising_id"]
+                        )
+                        AttributionStore.saveOnce(initialAttribution)
+
                         if (!clickId.isNullOrEmpty()) {
                             SdkRuntime.ioLaunch {
                                 try {
@@ -729,7 +771,7 @@ object DeepLinkHandler {
             val resolveUrl = if (clickId != null) {
                 "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=$clickId"
             } else {
-                "${DomainConfig.RESOLVE_CLICK_WITH_CODE_ENDPOINT}?code=$code"
+                "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?code=$code"
             }
 
             SdkRuntime.ioLaunch {
@@ -737,9 +779,41 @@ object DeepLinkHandler {
                     val (_, json) = NetworkUtils.resolveClick(resolveUrl, apiKey)
                     val dartMap = NetworkUtils.extractParamsFromJson(json, clickId)
                     dartMap["click_id"]?.let { enrichmentData["click_id"] = it.toString() }
+
+                    val normalized = linkedMapOf<String, String?>(
+                        "source" to "deep_link",
+                        "click_id" to (dartMap["click_id"] as? String ?: clickId),
+                        "utm_source" to (dartMap["utm_source"] as? String),
+                        "utm_medium" to (dartMap["utm_medium"] as? String),
+                        "utm_campaign" to (dartMap["utm_campaign"] as? String),
+                        "utm_term" to (dartMap["utm_term"] as? String),
+                        "utm_content" to (dartMap["utm_content"] as? String),
+                        "gclid" to (dartMap["gclid"] as? String),
+                        "fbclid" to (dartMap["fbclid"] as? String),
+                        "ttclid" to (dartMap["ttclid"] as? String),
+                        "deeplinkly_device_id" to enrichmentData["deeplinkly_device_id"],
+                        "advertising_id" to enrichmentData["advertising_id"]
+                    )
+                    AttributionStore.saveOnce(normalized)
+
                     SdkRuntime.postToFlutter(channel, "onDeepLink", dartMap)
                     EnrichmentSender.sendOnce(context, enrichmentData, "deep_link", apiKey)
+
                 } catch (e: Exception) {
+                    // Fallback: parse directly from the incoming deep link URI
+                    val fallback = linkedMapOf<String, Any?>(
+                        "click_id" to clickId,
+                        "utm_source" to data.getQueryParameter("utm_source"),
+                        "utm_medium" to data.getQueryParameter("utm_medium"),
+                        "utm_campaign" to data.getQueryParameter("utm_campaign"),
+                        "utm_term" to data.getQueryParameter("utm_term"),
+                        "utm_content" to data.getQueryParameter("utm_content"),
+                        "gclid" to data.getQueryParameter("gclid"),
+                        "fbclid" to data.getQueryParameter("fbclid"),
+                        "ttclid" to data.getQueryParameter("ttclid")
+                    )
+                    AttributionStore.saveOnce(fallback.mapValues { it.value as? String })
+                    SdkRuntime.postToFlutter(channel, "onDeepLink", fallback)
                     NetworkUtils.reportError(context, apiKey, "resolve exception", e.stackTraceToString(), clickId)
                 }
             }
@@ -805,6 +879,10 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
         when (call.method) {
             "getPlatformVersion" -> {
                 result.success("Android ${Build.VERSION.RELEASE}")
+            }
+
+            "getInstallAttribution" -> {
+                result.success(AttributionStore.get())
             }
 
             "generateLink" -> {

@@ -15,6 +15,11 @@ class FlutterDeeplinkly {
     });
   }
 
+  static Future<Map<String, String>> getInstallAttribution() async {
+    final result = await _channel.invokeMapMethod<String, String>('getInstallAttribution');
+    return Map<String, String>.from(result ?? const {});
+  }
+
   static void onResolved(void Function(Map<dynamic, dynamic> params) callback) {
     _onResolvedCallback = callback;
   }
