@@ -1,6 +1,7 @@
-## 1.1.6
+## 1.1.7
 
 * Added Android Support For Deeplinking, Deferred Deeplinking
 * Added Support For Link Generation
 * Added Support For UTM & Ad Data
 * GDPR Compliance
+* Advanced Attribution
