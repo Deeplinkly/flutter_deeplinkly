@@ -48,7 +48,7 @@ object SdkRuntime {
     lateinit var mainHandler: Handler
 
     fun ioLaunch(block: suspend CoroutineScope.() -> Unit) =
-        (if (::ioScope.isInitialized) ioScope else CoroutineScope(Dispatchers.IO)).launch(block = block)
+        (if (::ioScope.isInitialized) ioScope else CxoroutineScope(Dispatchers.IO)).launch(block = block)
 
     fun postToFlutter(channel: MethodChannel, method: String, args: Any?) {
         mainHandler.post {
@@ -612,6 +612,8 @@ object NetworkUtils {
 }
 
 object InstallReferrerHandler {
+    private const val KEY_REFERRER_HANDLED = "install_referrer_handled"
+
     fun checkInstallReferrer(
         context: Context,
         activity: Activity,
@@ -624,62 +626,67 @@ object InstallReferrerHandler {
             return
         }
 
-        val referrerClient = InstallReferrerClient.newBuilder(context).build()
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_REFERRER_HANDLED, false)) {
+            Logger.d("Install referrer already handled; skipping.")
+            return
+        }
 
+        val referrerClient = InstallReferrerClient.newBuilder(context).build()
         referrerClient.startConnection(object : InstallReferrerStateListener {
             override fun onInstallReferrerSetupFinished(responseCode: Int) {
-                if (responseCode == InstallReferrerResponse.OK) {
-                    val rawReferrer = referrerClient.installReferrer.installReferrer
-                    val parsedReferrer = "https://dummy?$rawReferrer".toUri()
+                try {
+                    if (responseCode == InstallReferrerResponse.OK) {
+                        val rawReferrer = referrerClient.installReferrer.installReferrer
+                        val parsedReferrer = "https://dummy?$rawReferrer".toUri()
+                        val clickId = parsedReferrer.getQueryParameter("click_id")
 
-                    val clickId = parsedReferrer.getQueryParameter("click_id")
+                        val enrichmentData = try {
+                            EnrichmentUtils.collect().toMutableMap()
+                        } catch (e: Exception) {
+                            NetworkUtils.reportError(context, apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
+                            mutableMapOf()
+                        }
 
-                    val enrichmentData = try {
-                        EnrichmentUtils.collect().toMutableMap()
-                    } catch (e: Exception) {
-                        NetworkUtils.reportError(context, apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
-                        mutableMapOf()
-                    }
+                        enrichmentData["install_referrer"] = rawReferrer
+                        enrichmentData["android_reported_at"] = System.currentTimeMillis().toString()
+                        enrichmentData["click_id"] = clickId
+                        enrichmentData["utm_source"] = parsedReferrer.getQueryParameter("utm_source")
+                        enrichmentData["utm_medium"] = parsedReferrer.getQueryParameter("utm_medium")
+                        enrichmentData["utm_campaign"] = parsedReferrer.getQueryParameter("utm_campaign")
+                        enrichmentData["utm_term"] = parsedReferrer.getQueryParameter("utm_term")
+                        enrichmentData["utm_content"] = parsedReferrer.getQueryParameter("utm_content")
+                        enrichmentData["gclid"] = parsedReferrer.getQueryParameter("gclid")
+                        enrichmentData["fbclid"] = parsedReferrer.getQueryParameter("fbclid")
+                        enrichmentData["ttclid"] = parsedReferrer.getQueryParameter("ttclid")
 
-                    // Add basic enrichment
-                    enrichmentData["install_referrer"] = rawReferrer
-                    enrichmentData["android_reported_at"] = System.currentTimeMillis().toString()
+                        if (!clickId.isNullOrEmpty()) {
+                            SdkRuntime.ioLaunch {
+                                try {
+                                    val (_, json) = NetworkUtils.resolveClick(
+                                        "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=$clickId", apiKey
+                                    )
+                                    val dartMap = NetworkUtils.extractParamsFromJson(json, clickId)
 
-                    // Add standard UTM / Ad attribution parameters
-                    enrichmentData["click_id"] = clickId
-                    enrichmentData["utm_source"] = parsedReferrer.getQueryParameter("utm_source")
-                    enrichmentData["utm_medium"] = parsedReferrer.getQueryParameter("utm_medium")
-                    enrichmentData["utm_campaign"] = parsedReferrer.getQueryParameter("utm_campaign")
-                    enrichmentData["utm_term"] = parsedReferrer.getQueryParameter("utm_term")
-                    enrichmentData["utm_content"] = parsedReferrer.getQueryParameter("utm_content")
-                    enrichmentData["gclid"] = parsedReferrer.getQueryParameter("gclid")
-                    enrichmentData["fbclid"] = parsedReferrer.getQueryParameter("fbclid")
-                    enrichmentData["ttclid"] = parsedReferrer.getQueryParameter("ttclid")
+                                    // 🔒 Post to Flutter only once per install
+                                    if (!prefs.getBoolean(KEY_REFERRER_HANDLED, false)) {
+                                        SdkRuntime.postToFlutter(channel, "onDeepLink", dartMap)
+                                        prefs.edit().putBoolean(KEY_REFERRER_HANDLED, true).apply()
+                                    }
 
-                    if (!clickId.isNullOrEmpty()) {
-                        SdkRuntime.ioLaunch {
-                            try {
-                                val (_, json) = NetworkUtils.resolveClick(
-                                    "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=$clickId", apiKey
-                                )
-                                val dartMap = NetworkUtils.extractParamsFromJson(json, clickId)
-                                SdkRuntime.postToFlutter(channel, "onDeepLink", dartMap)
-                                EnrichmentSender.sendOnce(context, enrichmentData, "install_referrer", apiKey)
-                            } catch (e: Exception) {
-                                NetworkUtils.reportError(context, apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
+                                    EnrichmentSender.sendOnce(context, enrichmentData, "install_referrer", apiKey)
+                                } catch (e: Exception) {
+                                    NetworkUtils.reportError(context, apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
+                                }
                             }
+                        } else {
+                            Logger.d("No click_id in install referrer; skipping resolveClick")
                         }
                     } else {
-                        Logger.d("No click_id found in install referrer, skipping resolveClick")
+                        Logger.w("InstallReferrer: code=$responseCode")
                     }
-                } else {
-                    Logger.w("InstallReferrer: code=$responseCode")
-                }
-
-                try {
-                    referrerClient.endConnection()
-                } catch (e: Exception) {
-                    Logger.e("Error closing referrer client", e)
+                } finally {
+                    try { referrerClient.endConnection() } catch (e: Exception) { Logger.e("Error closing referrer client", e) }
                 }
             }
 

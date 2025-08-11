@@ -1,4 +1,4 @@
-## 1.1.7
+## 1.1.8
 
 * Added Android Support For Deeplinking, Deferred Deeplinking
 * Added Support For Link Generation
