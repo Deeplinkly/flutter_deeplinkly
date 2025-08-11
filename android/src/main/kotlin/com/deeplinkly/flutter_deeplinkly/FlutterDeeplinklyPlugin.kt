@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.annotation.NonNull
+import kotlinx.coroutines.cancel
 import androidx.core.net.toUri
 import com.android.installreferrer.api.InstallReferrerClient
 import com.android.installreferrer.api.InstallReferrerClient.InstallReferrerResponse
@@ -33,7 +34,6 @@ import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineExceptionHandler
-
 
 import com.google.android.gms.ads.identifier.AdvertisingIdClient
 
@@ -158,29 +158,27 @@ object SdkRetryQueue {
         prefs.edit().putStringSet(KEY, current).apply()
     }
 
-    fun retryAll(apiKey: String) {
+    suspend fun retryAll(apiKey: String) = withContext(Dispatchers.IO) {
         val context = DeeplinklyContext.app
         if (TrackingPreferences.isTrackingDisabled()) {
             Logger.d("Tracking is disabled. Skipping retry queue.")
-            return
+            return@withContext
         }
         for (json in getQueue()) {
             try {
                 val obj = JSONObject(json)
                 val type = obj.getString("type")
-                val payloadStr = obj.getString("payload")
-                val payload = JSONObject(payloadStr)
+                val payload = JSONObject(obj.getString("payload"))
 
                 when (type) {
                     "enrichment" -> NetworkUtils.sendEnrichmentNow(payload, apiKey)
-                    "error" -> NetworkUtils.sendErrorNow(payload, apiKey)
-                    else -> Logger.w("Unknown SDK retry type: $type")
+                    "error"      -> NetworkUtils.sendErrorNow(payload, apiKey)
+                    else         -> Logger.w("Unknown SDK retry type: $type")
                 }
 
                 remove(json)
             } catch (e: Exception) {
-                Logger.e("Retry failed for $json", e)
-                // Keep in queue
+                Logger.e("Retry failed for $json", e) // keep in queue
             }
         }
     }
@@ -357,43 +355,45 @@ object EnrichmentUtils {
         val context = DeeplinklyContext.app
         val pm = context.packageManager
         val pkg = context.packageName
-        val base = mutableMapOf<String, String?>()
-        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
-        val customUserId = prefs.getString("custom_user_id", null)
-        base["custom_user_id"] = customUserId
-        base["deeplinkly_device_id"] = DeviceIdManager.getOrCreateDeviceId()
-        base.putAll(collectFingerprint())
 
-        val versionInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageInfo(pkg, 0)
+        val out = mutableMapOf<String, String?>()
+        val prefs = context.getSharedPreferences("deeplinkly_prefs", Context.MODE_PRIVATE)
+
+        out["custom_user_id"] = prefs.getString("custom_user_id", null)
+        out["deeplinkly_device_id"] = DeviceIdManager.getOrCreateDeviceId()
+        out.putAll(collectFingerprint())
+
+        val versionInfo = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(pkg, 0)
+            }
+        } catch (e: Exception) {
+            null
         }
 
-        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            versionInfo.longVersionCode.toString()
-        } else {
-            @Suppress("DEPRECATION")
-            versionInfo.versionCode.toString()
+        val versionCode = versionInfo?.let {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) it.longVersionCode.toString()
+            else @Suppress("DEPRECATION") it.versionCode.toString()
         }
 
         val config = context.resources.configuration
-        val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            config.locales[0]
-        } else {
-            @Suppress("DEPRECATION")
-            config.locale
+        val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) config.locales[0] else @Suppress("DEPRECATION") config.locale
+
+        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+
+        val installer = when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                runCatching { pm.getInstallSourceInfo(pkg).installingPackageName }.getOrNull()
+            }
+            else -> @Suppress("DEPRECATION") pm.getInstallerPackageName(pkg)
         }
 
-        val deviceId = Settings.Secure.getString(
-            context.contentResolver,
-            Settings.Secure.ANDROID_ID
-        )
-
-        return mapOf(
-            "android_id" to deviceId,
-            "device_id" to deviceId,
+        out += mapOf(
+            "android_id" to androidId,
+            "device_id" to androidId, // if you truly want same value
             "manufacturer" to Build.MANUFACTURER,
             "brand" to Build.BRAND,
             "device" to Build.DEVICE,
@@ -402,14 +402,16 @@ object EnrichmentUtils {
             "os_version" to Build.VERSION.RELEASE,
             "platform" to "android",
             "device_model" to Build.MODEL,
-            "installer_package" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) null else pm.getInstallerPackageName(pkg),
-            "app_version" to versionInfo.versionName,
+            "installer_package" to installer,
+            "app_version" to versionInfo?.versionName,
             "app_build_number" to versionCode,
-            "locale" to locale.toString(),
+            "locale" to if (Build.VERSION.SDK_INT >= 21) locale.toLanguageTag() else locale.toString(),
             "language" to locale.language,
             "region" to locale.country,
             "timezone" to TimeZone.getDefault().id
         )
+
+        return out
     }
 
     fun collectFingerprint(): Map<String, String?> {
@@ -448,15 +450,23 @@ object EnrichmentUtils {
         base["user_agent"] =
             "Mozilla/5.0 (Linux; Android ${Build.VERSION.RELEASE}; ${Build.MODEL}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36"
 
+        // ✅ Put them here
+        val language = context.resources.configuration.let {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) it.locales[0].language else it.locale.language
+        }
+        val timezone = TimeZone.getDefault().id
+        val osVersion = Build.VERSION.RELEASE ?: ""
+        val deviceModel = Build.MODEL ?: ""
+
         val hardwareFingerprint = generateHardwareFingerprint(
             platform = "android",
             screenWidth = screenWidth,
             screenHeight = screenHeight,
             pixelRatio = pixelRatio,
-            language = base["language"] ?: "",
-            timezone = base["timezone"] ?: "",
-            osVersion = base["os_version"] ?: "",
-            deviceModel = base["device_model"] ?: ""
+            language = language,
+            timezone = timezone,
+            osVersion = osVersion,
+            deviceModel = deviceModel
         )
         base["hardware_fingerprint"] = hardwareFingerprint
 
@@ -536,11 +546,11 @@ object NetworkUtils {
         } catch (e: Exception) {
             Logger.e("Enrichment failed, queueing", e)
             val json = JSONObject(data.filterValues { it != null })
-            SdkRetryQueue.enqueue(DeeplinklyContext.app, json, "enrichment")
+            SdkRetryQueue.enqueue(json, "enrichment")
         }
     }
 
-    fun sendEnrichmentNow(payload: JSONObject, apiKey: String) {
+    suspend fun sendEnrichmentNow(payload: JSONObject, apiKey: String) = withContext(Dispatchers.IO) {
         val conn = openConnection(DomainConfig.ENRICH_ENDPOINT, apiKey).apply {
             requestMethod = "POST"
             setRequestProperty("Content-Type", "application/json")
@@ -568,7 +578,7 @@ object NetworkUtils {
                     sendErrorNow(payload, apiKey)
                 } catch (e: Exception) {
                     Logger.e("Error reporting failed, queueing", e)
-                    SdkRetryQueue.enqueue(DeeplinklyContext.app, payload, "error")
+                    SdkRetryQueue.enqueue(payload, "error")
                 }
             }
         } catch (e: Exception) {
@@ -578,11 +588,11 @@ object NetworkUtils {
                 put("stack", stack)
                 clickId?.let { put("click_id", it) }
             }
-            SdkRetryQueue.enqueue(DeeplinklyContext.app, payload, "error")
+            SdkRetryQueue.enqueue(payload, "error")
         }
     }
 
-    fun sendErrorNow(payload: JSONObject, apiKey: String) {
+    suspend fun sendErrorNow(payload: JSONObject, apiKey: String) = withContext(Dispatchers.IO) {
         val conn = openConnection(DomainConfig.ERROR_ENDPOINT, apiKey).apply {
             requestMethod = "POST"
             setRequestProperty("Content-Type", "application/json")
