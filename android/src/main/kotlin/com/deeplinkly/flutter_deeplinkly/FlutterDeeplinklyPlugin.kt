@@ -24,6 +24,7 @@ import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
 import android.os.Handler
 import android.os.Looper
+import com.deeplinkly.flutter_deeplinkly.enrichment.StartupEnrichment
 
 class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
     private lateinit var channel: MethodChannel
@@ -52,6 +53,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                 android.content.pm.PackageManager.GET_META_DATA
             )
             apiKey = appInfo.metaData?.getString("com.deeplinkly.sdk.api_key").orEmpty()
+            StartupEnrichment.schedule(apiKey)
             if (apiKey.isBlank()) {
                 Logger.e("Missing API key in AndroidManifest.xml (com.deeplinkly.sdk.api_key)")
                 false

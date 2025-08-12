@@ -1,14 +1,18 @@
 package com.deeplinkly.flutter_deeplinkly.network
 
+import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext
 import com.deeplinkly.flutter_deeplinkly.core.Logger
+import com.deeplinkly.flutter_deeplinkly.core.Prefs
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.privacy.TrackingPreferences
 import com.deeplinkly.flutter_deeplinkly.retry.SdkRetryQueue
+import com.deeplinkly.flutter_deeplinkly.util.DeviceIdManager
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 object NetworkUtils {
 
@@ -125,5 +129,25 @@ object NetworkUtils {
             connectTimeout = 10_000
             readTimeout = 15_000
             setRequestProperty("Authorization", "Bearer $apiKey")
+            setRequestProperty("Accept", "application/json")
+
+            // IDs on every call
+            val sp = Prefs.of()
+            val customUserId = sp.getString("custom_user_id", null)
+            val deeplinklyUserId = DeviceIdManager.getOrCreateDeviceId()
+            customUserId?.let { setRequestProperty("X-Custom-User-Id", it) }
+            setRequestProperty("X-Deeplinkly-User-Id", deeplinklyUserId)
         }
+
+
+
+    private fun getOrPersistDeviceId(): String {
+        val sp = Prefs.of()
+        val key = "dl_device_id"
+        val existing = sp.getString(key, null)
+        if (existing != null) return existing
+        val fresh = UUID.randomUUID().toString()
+        sp.edit().putString(key, fresh).apply()
+        return fresh
+    }
 }
