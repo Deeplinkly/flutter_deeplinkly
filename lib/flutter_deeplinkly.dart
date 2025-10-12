@@ -33,12 +33,7 @@ class FlutterDeeplinkly {
         'content': content.toJson(),
         'options': options.toJson(),
       };
-
-      final rawResult = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-        'generateLink',
-        payload,
-      );
-
+      final rawResult = await _channel.invokeMethod<Map<dynamic, dynamic>>('generateLink', payload);
       if (rawResult == null) {
         return DeeplinklyResult(
           success: false,
@@ -49,7 +44,6 @@ class FlutterDeeplinkly {
 
       return DeeplinklyResult.fromMap(rawResult);
     } catch (e) {
-      print("generateLink failed: $e");
       return DeeplinklyResult(
         success: false,
         errorMessage: e.toString(),

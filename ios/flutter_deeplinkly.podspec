@@ -5,13 +5,13 @@
 Pod::Spec.new do |s|
   s.name             = 'flutter_deeplinkly'
   s.version          = '0.0.1'
-  s.summary          = 'Flutter Deeplinking Project'
+  s.summary          = 'Flutter Deeplinkly SDK'
   s.description      = <<-DESC
 Flutter Deeplinking Project
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://deeplinkly.com'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.author           = { 'Deeplinkly' => 'hello@deeplinkly.com' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'

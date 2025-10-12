@@ -7,7 +7,7 @@ import 'flutter_deeplinkly_platform_interface.dart';
 class MethodChannelFlutterDeeplinkly extends FlutterDeeplinklyPlatform {
   /// The method channel used to interact with the native platform.
   @visibleForTesting
-  final methodChannel = const MethodChannel('flutter_deeplinkly');
+  final methodChannel = const MethodChannel('deeplinkly/channel');
 
   @override
   Future<String?> getPlatformVersion() async {
