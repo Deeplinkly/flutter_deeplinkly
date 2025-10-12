@@ -73,7 +73,7 @@ enum NetworkUtils {
     }
 
     static func sendEnrichment(_ data: [String: Any?], apiKey: String) {
-        guard !TrackingPreferences.isDisabled() else { return }
+        guard !TrackingPreferences.isTrackingDisabled() else { return }
         let filtered = data.compactMapValues { $0 }
         request(DomainConfig.enrich, method: "POST", apiKey: apiKey, body: filtered) { result in
             if case .failure = result {
@@ -97,7 +97,7 @@ enum NetworkUtils {
 
     static func reportError(apiKey: String, message: String, stack: String, clickId: String? = nil)
     {
-        guard !TrackingPreferences.isDisabled() else { return }
+        guard !TrackingPreferences.isTrackingDisabled() else { return }
         var payload: [String: Any] = ["message": message, "stack": stack]
         if let c = clickId { payload["click_id"] = c }
         request(DomainConfig.sdkError, method: "POST", apiKey: apiKey, body: payload) { result in

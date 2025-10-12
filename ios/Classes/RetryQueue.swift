@@ -10,7 +10,8 @@ enum RetryQueue {
         let item: [String: Any] = ["type": type, "payload": payload]
 
         if let data = try? JSONSerialization.data(withJSONObject: item, options: []),
-           let jsonString = String(data: data, encoding: .utf8) {
+            let jsonString = String(data: data, encoding: .utf8)
+        {
             queue.append(jsonString)
             if queue.count > maxCount { queue.removeFirst() }
             UserDefaults.standard.set(queue, forKey: key)
@@ -33,14 +34,16 @@ enum RetryQueue {
 
     // Retry all items in queue
     static func retryAll(apiKey: String) {
-        guard !TrackingPreferences.isDisabled() else { return }
+        guard !TrackingPreferences.isTrackingDisabled() else { return }
 
         for s in items() {
             do {
                 guard let data = s.data(using: .utf8),
-                      let obj = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                      let type = obj["type"] as? String,
-                      let payloadObj = obj["payload"] else {
+                    let obj = try JSONSerialization.jsonObject(with: data, options: [])
+                        as? [String: Any],
+                    let type = obj["type"] as? String,
+                    let payloadObj = obj["payload"]
+                else {
                     continue
                 }
 
@@ -48,8 +51,10 @@ enum RetryQueue {
                 if let dict = payloadObj as? [String: Any] {
                     payload = dict
                 } else if let payloadStr = payloadObj as? String,
-                          let payloadData = payloadStr.data(using: .utf8),
-                          let parsed = try JSONSerialization.jsonObject(with: payloadData, options: []) as? [String: Any] {
+                    let payloadData = payloadStr.data(using: .utf8),
+                    let parsed = try JSONSerialization.jsonObject(with: payloadData, options: [])
+                        as? [String: Any]
+                {
                     payload = parsed
                 } else {
                     continue

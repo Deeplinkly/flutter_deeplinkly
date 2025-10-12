@@ -3,7 +3,7 @@ import Foundation
 
 enum EnrichmentSender {
   static func sendOnce(enrichmentData: [String: String?], source: String, apiKey: String) {
-    guard !TrackingPreferences.isDisabled() else { return }
+    guard !TrackingPreferences.isTrackingDisabled() else { return }
     let key = "\(source)_enriched"
     if Prefs.bool(for: key) == true { return }
 
