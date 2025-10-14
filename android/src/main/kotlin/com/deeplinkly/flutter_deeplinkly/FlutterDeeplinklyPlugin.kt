@@ -66,11 +66,13 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         if (!sdkEnabled) {
-            result.success(mapOf(
-                "success" to false,
-                "error_code" to "SDK_DISABLED",
-                "error_message" to "Deeplinkly SDK is disabled (missing API key)."
-            ))
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "error_code" to "SDK_DISABLED",
+                    "error_message" to "Deeplinkly SDK is disabled (missing API key)."
+                )
+            )
             return
         }
         when (call.method) {
@@ -87,37 +89,55 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                     val options = args["options"] as? Map<*, *> ?: return result.success(
                         mapOf("success" to false, "error_code" to "INVALID", "error_message" to "Missing options")
                     )
+
                     val payload = mutableMapOf<String, Any?>().apply {
                         putAll(content.mapKeys { it.key.toString() })
                         putAll(options.mapKeys { it.key.toString() })
                     }
+
                     SdkRuntime.ioLaunch {
                         try {
-                            val url = NetworkUtils.generateLink(payload, apiKey)
+                            val response = NetworkUtils.generateLink(payload, apiKey)
                             activity?.runOnUiThread {
-                                result.success(mapOf("success" to true, "url" to url))
+                                // ✅ Return exactly what NetworkUtils returns (same as iOS)
+                                result.success(response)
                             }
                         } catch (e: Exception) {
                             Logger.e("generateLink failed", e)
                             activity?.runOnUiThread {
-                                result.success(mapOf("success" to false, "error_code" to "LINK_ERROR", "error_message" to e.message))
+                                result.success(
+                                    mapOf(
+                                        "success" to false,
+                                        "error_code" to "LINK_ERROR",
+                                        "error_message" to (e.message ?: "generateLink failed")
+                                    )
+                                )
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    result.success(mapOf("success" to false, "error_code" to "LINK_ERROR", "error_message" to e.message))
+                    result.success(
+                        mapOf(
+                            "success" to false,
+                            "error_code" to "LINK_ERROR",
+                            "error_message" to (e.message ?: "Unexpected error")
+                        )
+                    )
                 }
             }
+
             "disableTracking" -> {
                 val disabled = call.argument<Boolean>("disabled") ?: false
                 TrackingPreferences.setTrackingDisabled(disabled)
                 result.success(true)
             }
+
             "setCustomUserId" -> {
                 val userId = call.argument<String>("user_id")
                 Prefs.of().edit().putString("custom_user_id", userId).apply()
                 result.success(true)
             }
+
             else -> result.notImplemented()
         }
     }
@@ -146,8 +166,14 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) = onAttachedToActivity(binding)
-    override fun onDetachedFromActivityForConfigChanges() { Logger.d("onDetachedFromActivityForConfigChanges"); activity = null }
-    override fun onDetachedFromActivity() { Logger.d("onDetachedFromActivity"); activity = null }
+    override fun onDetachedFromActivityForConfigChanges() {
+        Logger.d("onDetachedFromActivityForConfigChanges"); activity = null
+    }
+
+    override fun onDetachedFromActivity() {
+        Logger.d("onDetachedFromActivity"); activity = null
+    }
+
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
         Logger.d("onDetachedFromEngine")
         channel.setMethodCallHandler(null)
