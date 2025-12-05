@@ -3,17 +3,21 @@ package com.deeplinkly.flutter_deeplinkly.core
 
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
 
 object DeeplinklyCore {
-    private const val TAG = "Deeplinkly"
-
-    fun d(msg: String) = Log.d(TAG, "✅ $msg")
-    fun w(msg: String) = Log.w(TAG, "⚠️ $msg")
-    fun e(msg: String, err: Throwable? = null) = Log.e(TAG, "❌ $msg", err)
+    // Logging disabled for production SDK
+    fun d(msg: String) {
+        // No-op: logging disabled
+    }
+    fun w(msg: String) {
+        // No-op: logging disabled
+    }
+    fun e(msg: String, err: Throwable? = null) {
+        // No-op: logging disabled
+    }
 
     val ioScope: CoroutineScope by lazy {
         CoroutineScope(SupervisorJob() + Dispatchers.IO)

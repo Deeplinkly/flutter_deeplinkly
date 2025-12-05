@@ -196,7 +196,7 @@ class DeeplinklySession(
                         return
                     }
 
-                    val enrichment = DeeplinklyUtils.collectEnrichment().toMutableMap().apply {
+                    val enrichment: MutableMap<String, String?> = DeeplinklyUtils.collectEnrichment().toMutableMap().apply {
                         put("install_referrer", rawReferrer)
                         put("android_reported_at", System.currentTimeMillis().toString())
                         put("click_id", clickId)

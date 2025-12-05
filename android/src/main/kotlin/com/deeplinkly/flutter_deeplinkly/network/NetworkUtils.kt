@@ -6,7 +6,7 @@ import com.deeplinkly.flutter_deeplinkly.core.Prefs
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.privacy.TrackingPreferences
 import com.deeplinkly.flutter_deeplinkly.retry.SdkRetryQueue
-import com.deeplinkly.flutter_deeplinkly.util.DeviceIdManager
+import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyUtils
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -168,7 +168,7 @@ object NetworkUtils {
             // IDs on every call
             val sp = Prefs.of()
             val customUserId = sp.getString("custom_user_id", null)
-            val deeplinklyUserId = DeviceIdManager.getOrCreateDeviceId()
+            val deeplinklyUserId = DeeplinklyUtils.getOrCreateDeviceId()
             customUserId?.let { setRequestProperty("X-Custom-User-Id", it) }
             setRequestProperty("X-Deeplinkly-User-Id", deeplinklyUserId)
         }

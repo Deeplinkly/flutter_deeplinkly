@@ -30,4 +30,170 @@ migrate_working_dir/
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
 build/
+
+# Coverage
+coverage/
+*.lcov
+
+# Test results
+test-results/
+*.test_result
+
+# Android related
+android/.gradle/
+android/build/
+android/local.properties
+android/.idea/
+android/*.iml
+android/*.ipr
+android/*.iws
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# iOS related
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/Flutter/flutter_assets/
+ios/Flutter/flutter_export_environment.sh
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+ios/Pods/
+ios/.flutter-plugins
+ios/.flutter-plugins-dependencies
+ios/Podfile.lock
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/Flutter/flutter_assets/
+ios/Flutter/flutter_export_environment.sh
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+ios/Pods/
+ios/.flutter-plugins
+ios/.flutter-plugins-dependencies
+ios/Podfile.lock
+
+# Example app
+example/.dart_tool/
+example/.flutter-plugins
+example/.flutter-plugins-dependencies
+example/.packages
+example/build/
+example/android/.gradle/
+example/android/build/
+example/android/local.properties
+example/android/.idea/
+example/android/*.iml
+example/android/app/build/
+example/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+example/ios/.symlinks/
+example/ios/Flutter/Flutter.framework
+example/ios/Flutter/Flutter.podspec
+example/ios/Flutter/Generated.xcconfig
+example/ios/Flutter/ephemeral/
+example/ios/Flutter/app.flx
+example/ios/Flutter/app.zip
+example/ios/Flutter/flutter_assets/
+example/ios/Flutter/flutter_export_environment.sh
+example/ios/ServiceDefinitions.json
+example/ios/Runner/GeneratedPluginRegistrant.*
+example/ios/Pods/
+example/ios/.flutter-plugins
+example/ios/.flutter-plugins-dependencies
+example/ios/Podfile.lock
+example/pubspec.lock
+
+# Firebase Test Lab
+firebase-test-results/
+*.apk
+*.aab
+*.apks
+*.test_result
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# Local configuration files
+local.properties
+*.keystore
+*.jks
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# API keys (if stored in files)
+**/api_keys.txt
+**/secrets.properties
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Google Cloud
+.gcloud/
+gcp-key.json
+service-account-key.json
+
+# Test artifacts
+test-results/
+coverage/
+*.test_result
+*.test_artifacts

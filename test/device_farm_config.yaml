@@ -1,0 +1,36 @@
+# Firebase Test Lab Configuration for Deeplinkly SDK Deferred Deep Link Testing
+# Tests deferred deep linking on Samsung S24 Ultra
+
+test_specs:
+  # Test on Samsung S24 Ultra for deferred deep link testing
+  - device:
+      model: "SM-S928B"  # Samsung Galaxy S24 Ultra
+      version: "34"       # Android 14
+      locale: "en_US"
+      orientation: "portrait"
+    test:
+      type: "instrumentation"
+      app: "app-debug.apk"
+      test: "app-debug-androidTest.apk"
+      timeout: "30m"
+
+# Test scenarios to run
+test_scenarios:
+  - name: "deferred_deep_link"
+    description: "Test deferred deep link flow: TEST_LINK clicked -> app installed -> deferred params delivered"
+  
+  - name: "install_referrer_attribution"
+    description: "Test install referrer contains click_id from TEST_LINK"
+  
+  - name: "deferred_params_resolution"
+    description: "Test click_id from install referrer is resolved and params are delivered"
+  
+  - name: "deferred_data_display"
+    description: "Test deferred deep link data is displayed on screen and logged to console"
+
+# Environment variables
+environment:
+  API_KEY: "${DEEPLINKLY_API_KEY}"
+  TEST_TIMEOUT: "30m"
+  MAX_RETRIES: "3"
+

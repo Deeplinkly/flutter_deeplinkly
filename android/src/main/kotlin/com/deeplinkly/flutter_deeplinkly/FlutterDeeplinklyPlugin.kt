@@ -3,7 +3,6 @@ package com.deeplinkly.flutter_deeplinkly
 import android.app.Activity
 import android.content.Context
 import android.os.Build
-import android.util.Log
 import androidx.annotation.NonNull
 import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext
 import com.deeplinkly.flutter_deeplinkly.core.Logger
@@ -34,9 +33,9 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
 
     private val coroutineErrorHandler = CoroutineExceptionHandler { _, e ->
         try {
-            NetworkUtils.reportError(apiKey, "Coroutine crash", Log.getStackTraceString(e))
+            val stackTrace = e.stackTraceToString()
+            NetworkUtils.reportError(apiKey, "Coroutine crash", stackTrace)
         } catch (_: Exception) {}
-        Logger.e("Coroutine crash", e)
     }
 
     override fun onAttachedToEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
@@ -154,6 +153,12 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
             "setCustomUserId" -> {
                 val userId = call.argument<String>("user_id")
                 Prefs.of().edit().putString("custom_user_id", userId).apply()
+                result.success(true)
+            }
+
+            "setDebugMode" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: false
+                Logger.setDebugMode(enabled)
                 result.success(true)
             }
 

@@ -1,0 +1,38 @@
+{
+  "deep_link_attribution": {
+    "source": "deep_link",
+    "click_id": "attribution_click_123",
+    "utm_source": "google",
+    "utm_medium": "cpc",
+    "utm_campaign": "test_campaign",
+    "gclid": "gclid_attribution_value"
+  },
+  "install_referrer_attribution": {
+    "source": "install_referrer",
+    "install_referrer": "utm_source=google&utm_medium=cpc&utm_campaign=install",
+    "utm_source": "google",
+    "utm_medium": "cpc",
+    "utm_campaign": "install",
+    "click_id": "install_click_456"
+  },
+  "clipboard_attribution": {
+    "source": "clipboard",
+    "click_id": "clipboard_click_789",
+    "utm_source": "social",
+    "utm_medium": "share"
+  },
+  "merged_attribution": {
+    "source": "deep_link",
+    "click_id": "merged_click",
+    "utm_source": "google",
+    "utm_medium": "cpc",
+    "utm_campaign": "merged_campaign",
+    "gclid": "merged_gclid",
+    "fbclid": "merged_fbclid"
+  },
+  "minimal_attribution": {
+    "source": "deep_link",
+    "click_id": "minimal_attribution"
+  }
+}
+

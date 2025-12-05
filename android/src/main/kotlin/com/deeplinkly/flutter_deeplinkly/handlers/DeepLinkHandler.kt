@@ -7,7 +7,7 @@ import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
 import com.deeplinkly.flutter_deeplinkly.network.NetworkUtils
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
-import com.deeplinkly.flutter_deeplinkly.util.EnrichmentUtils
+import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyUtils
 import com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue
 import io.flutter.plugin.common.MethodChannel
 
@@ -42,7 +42,7 @@ object DeepLinkHandler {
 
             // Collect enrichment (guarded) - CRITICAL: Preserve this data
             val enrichmentData = try {
-                EnrichmentUtils.collect().toMutableMap()
+                DeeplinklyUtils.collectEnrichment().toMutableMap()
             } catch (e: Exception) {
                 NetworkUtils.reportError(
                     apiKey,

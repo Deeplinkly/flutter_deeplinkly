@@ -1,0 +1,49 @@
+{
+  "successful_resolution": {
+    "status": 200,
+    "body": {
+      "click_id": "resolved_click_123",
+      "params": {
+        "utm_source": "google",
+        "utm_medium": "cpc",
+        "utm_campaign": "test_campaign",
+        "gclid": "gclid_value"
+      }
+    }
+  },
+  "network_error": {
+    "status": 500,
+    "body": {
+      "error": "Internal server error",
+      "error_code": "SERVER_ERROR"
+    }
+  },
+  "timeout": {
+    "status": 0,
+    "body": {
+      "error": "Request timeout",
+      "error_code": "TIMEOUT"
+    }
+  },
+  "not_found": {
+    "status": 404,
+    "body": {
+      "error": "Click ID not found",
+      "error_code": "NOT_FOUND"
+    }
+  },
+  "partial_data": {
+    "status": 200,
+    "body": {
+      "click_id": "partial_click",
+      "params": {
+        "utm_source": "partial_source"
+      }
+    }
+  },
+  "empty_response": {
+    "status": 200,
+    "body": {}
+  }
+}
+

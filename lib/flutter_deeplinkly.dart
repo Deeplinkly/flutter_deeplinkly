@@ -63,8 +63,7 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
           instance._deepLinkController.add(args);
         }
       } catch (e) {
-        // Log error but don't crash
-        print('FlutterDeeplinkly: Error handling method call: $e');
+        // Silently handle error without crashing
       }
     });
     
@@ -84,7 +83,7 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
       await _channel.invokeMethod('flutterReady');
       _isFlutterReady = true;
     } catch (e) {
-      print('FlutterDeeplinkly: Error marking Flutter as ready: $e');
+      // Silently handle error
     }
   }
 
@@ -99,7 +98,7 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
         'state': state.toString().split('.').last, // e.g., 'resumed', 'paused'
       });
     } catch (e) {
-      print('FlutterDeeplinkly: Error notifying lifecycle change: $e');
+      // Silently handle error
     }
     
     // Mark Flutter as ready when app resumes
@@ -119,7 +118,6 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
       final result = await _channel.invokeMapMethod<String, String>('getInstallAttribution');
       return Map<String, String>.from(result ?? const {});
     } catch (e) {
-      print('FlutterDeeplinkly: Error getting install attribution: $e');
       return const {};
     }
   }
@@ -140,7 +138,7 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
       try {
         callback(data);
       } catch (e) {
-        print('FlutterDeeplinkly: Error in callback: $e');
+        // Silently handle error
       }
     });
     
@@ -175,6 +173,17 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
         errorMessage: e.toString(),
         errorCode: 'PLATFORM_EXCEPTION',
       );
+    }
+  }
+
+  /// Enable or disable debug logging
+  /// When enabled, all Logger.d() calls will be printed to console
+  /// Defaults to false (no logging) for production
+  static Future<void> setDebugMode(bool enabled) async {
+    try {
+      await _channel.invokeMethod('setDebugMode', {'enabled': enabled});
+    } catch (e) {
+      // Silently handle error
     }
   }
 

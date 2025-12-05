@@ -14,6 +14,19 @@ buildscript {
     }
 }
 
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+def flutterRoot = localProperties.getProperty('flutter.sdk')
+if (flutterRoot == null) {
+    throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
+}
+
 allprojects {
     repositories {
         google()
@@ -68,4 +81,19 @@ dependencies {
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.0'
     implementation "androidx.work:work-runtime-ktx:2.10.3"
+    implementation "androidx.core:core-ktx:1.12.0"
+    
+    // Flutter embedding dependencies
+    // Flutter automatically provides these when building through 'flutter run'
+    // For direct builds, we try to find the Flutter JAR
+    def flutterJar = "$flutterRoot/bin/cache/artifacts/engine/android-arm/flutter.jar"
+    if (file(flutterJar).exists()) {
+        compileOnly files(flutterJar)
+    } else {
+        // Try alternative location
+        def altFlutterJar = "$flutterRoot/bin/cache/artifacts/engine/android/flutter.jar"
+        if (file(altFlutterJar).exists()) {
+            compileOnly files(altFlutterJar)
+        }
+    }
 }

@@ -6,7 +6,7 @@ import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext
 import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
-import com.deeplinkly.flutter_deeplinkly.util.EnrichmentUtils
+import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyUtils
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -143,7 +143,7 @@ object StartupEnrichment {
         SdkRuntime.ioLaunch {
             try {
                 // Build enrichment data: base + first-touch attribution
-                val base = EnrichmentUtils.collect().toMutableMap()
+                val base = DeeplinklyUtils.collectEnrichment().toMutableMap()
                 base.putAll(attribution.mapValues { it.value })
                 
                 // Only send if we have meaningful data or if forced

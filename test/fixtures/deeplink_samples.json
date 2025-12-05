@@ -1,0 +1,45 @@
+{
+  "simple_deeplink": {
+    "click_id": "test_click_123",
+    "utm_source": "test_source",
+    "utm_medium": "test_medium",
+    "utm_campaign": "test_campaign"
+  },
+  "deeplink_with_code": {
+    "code": "abc123",
+    "utm_source": "email",
+    "utm_medium": "newsletter"
+  },
+  "deeplink_with_enrichment": {
+    "click_id": "enriched_click_456",
+    "utm_source": "google",
+    "utm_medium": "cpc",
+    "utm_campaign": "summer_sale",
+    "gclid": "gclid_test_value",
+    "device_id": "device_123",
+    "user_agent": "test_agent"
+  },
+  "deeplink_minimal": {
+    "click_id": "minimal_click"
+  },
+  "deeplink_complex": {
+    "click_id": "complex_click_789",
+    "utm_source": "facebook",
+    "utm_medium": "social",
+    "utm_campaign": "product_launch",
+    "utm_term": "mobile_app",
+    "utm_content": "banner_ad",
+    "fbclid": "fbclid_test_value",
+    "ttclid": "ttclid_test_value",
+    "custom_param_1": "value1",
+    "custom_param_2": "value2"
+  },
+  "deeplink_no_click_id": {
+    "code": "fallback_code",
+    "utm_source": "organic"
+  },
+  "deeplink_malformed": {
+    "invalid": "data"
+  }
+}
+

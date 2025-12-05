@@ -12,7 +12,7 @@ import com.deeplinkly.flutter_deeplinkly.core.Prefs
 import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
 import com.deeplinkly.flutter_deeplinkly.network.NetworkUtils
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
-import com.deeplinkly.flutter_deeplinkly.util.EnrichmentUtils
+import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyUtils
 import com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.atomic.AtomicBoolean
@@ -49,7 +49,7 @@ object InstallReferrerHandler {
 
                         // Collect enrichment data (preserve in error paths)
                         val enrichmentData = try {
-                            EnrichmentUtils.collect().toMutableMap()
+                            DeeplinklyUtils.collectEnrichment().toMutableMap()
                         } catch (e: Exception) {
                             NetworkUtils.reportError(apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
                             mutableMapOf()
@@ -93,7 +93,7 @@ object InstallReferrerHandler {
                         )
                         AttributionStore.saveOnce(initialAttribution)
 
-                        if (!clickId.isNullOrEmpty()) {
+                        if (clickId != null && clickId.isNotEmpty()) {
                             // Queue for resolution (with retry)
                             val pendingResolve = DeepLinkQueue.PendingResolve(
                                 clickId = clickId,
