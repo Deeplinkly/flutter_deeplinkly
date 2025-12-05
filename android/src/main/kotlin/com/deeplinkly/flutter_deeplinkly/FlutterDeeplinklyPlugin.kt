@@ -78,6 +78,25 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
         when (call.method) {
             "getPlatformVersion" -> result.success("Android ${Build.VERSION.RELEASE}")
             "getInstallAttribution" -> result.success(AttributionStore.get())
+            "flutterReady" -> {
+                SdkRuntime.setFlutterReady(channel)
+                SdkRuntime.ioLaunch {
+                    com.deeplinkly.flutter_deeplinkly.queue.QueueProcessor.processNow(channel, apiKey)
+                }
+                result.success(true)
+            }
+            "onLifecycleChange" -> {
+                val state = call.argument<String>("state")
+                Logger.d("Flutter lifecycle changed to: $state")
+                // Handle lifecycle changes - process queues when app resumes
+                if (state == "resumed") {
+                    SdkRuntime.setFlutterReady(channel)
+                    SdkRuntime.ioLaunch {
+                        com.deeplinkly.flutter_deeplinkly.queue.QueueProcessor.processNow(channel, apiKey)
+                    }
+                }
+                result.success(true)
+            }
             "generateLink" -> {
                 try {
                     val args = call.arguments as? Map<*, *> ?: return result.success(
@@ -98,13 +117,13 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                     SdkRuntime.ioLaunch {
                         try {
                             val response = NetworkUtils.generateLink(payload, apiKey)
-                            activity?.runOnUiThread {
-                                // ✅ Return exactly what NetworkUtils returns (same as iOS)
+                            // Use main handler instead of activity
+                            SdkRuntime.mainHandler.post {
                                 result.success(response)
                             }
                         } catch (e: Exception) {
                             Logger.e("generateLink failed", e)
-                            activity?.runOnUiThread {
+                            SdkRuntime.mainHandler.post {
                                 result.success(
                                     mapOf(
                                         "success" to false,
@@ -150,17 +169,44 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
             return
         }
         val context = binding.activity.applicationContext
+        val currentActivity = activity // Capture to avoid null issues
         try {
-            DeepLinkHandler.handleIntent(activity!!, activity!!.intent, channel, apiKey)
-            binding.addOnNewIntentListener {
+            // Handle initial intent (safe null check)
+            currentActivity?.let { act ->
+                val intent = act.intent
+                if (intent != null && intent.data != null) {
+                    DeepLinkHandler.handleIntent(act, intent, channel, apiKey)
+                }
+            }
+            
+            // Register for new intents
+            binding.addOnNewIntentListener { newIntent ->
                 Logger.d("onNewIntent received")
-                DeepLinkHandler.handleIntent(activity!!, it, channel, apiKey)
+                currentActivity?.let { act ->
+                    DeepLinkHandler.handleIntent(act, newIntent, channel, apiKey)
+                } ?: run {
+                    // Activity is null, queue the intent for later
+                    Logger.w("Activity is null, queueing intent for later processing")
+                    // Intent will be processed when activity is available
+                }
                 true
             }
-            InstallReferrerHandler.checkInstallReferrer(context, activity!!, channel, apiKey)
+            
+            // Check install referrer (safe)
+            currentActivity?.let { act ->
+                InstallReferrerHandler.checkInstallReferrer(context, act, channel, apiKey)
+            }
+            
             ClipboardHandler.checkClipboard(channel, apiKey)
-            SdkRuntime.ioLaunch { SdkRetryQueue.retryAll(apiKey) }
+            
+            // Process retry queues
+            SdkRuntime.ioLaunch { 
+                SdkRetryQueue.retryAll(apiKey)
+                // Also process deep link queues
+                com.deeplinkly.flutter_deeplinkly.queue.QueueProcessor.startProcessing(channel, apiKey)
+            }
         } catch (e: Exception) {
+            Logger.e("Plugin startup failure", e)
             NetworkUtils.reportError(apiKey, "Plugin startup failure", e.stackTraceToString())
         }
     }
@@ -177,6 +223,8 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
         Logger.d("onDetachedFromEngine")
         channel.setMethodCallHandler(null)
+        SdkRuntime.setFlutterNotReady()
+        com.deeplinkly.flutter_deeplinkly.queue.QueueProcessor.stopProcessing()
         SdkRuntime.ioScope.cancel()
     }
 }

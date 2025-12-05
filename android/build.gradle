@@ -2,7 +2,7 @@ group = "com.deeplinkly.flutter_deeplinkly"
 version = "1.0-SNAPSHOT"
 
 buildscript {
-    ext.kotlin_version = "1.8.22"
+    ext.kotlin_version = "2.2.0"
     repositories {
         google()
         mavenCentral()
@@ -47,16 +47,6 @@ android {
         minSdk = 21
     }
 
-    dependencies {
-        testImplementation("org.jetbrains.kotlin:kotlin-test")
-        testImplementation("org.mockito:mockito-core:5.17.0")
-        implementation 'com.android.installreferrer:installreferrer:2.2'
-        implementation 'com.google.android.gms:play-services-ads-identifier:18.2.0'
-        implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"
-        implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.0'
-        implementation "androidx.work:work-runtime-ktx:2.10.3"
-    }
-
     testOptions {
         unitTests.all {
             useJUnitPlatform()
@@ -68,4 +58,14 @@ android {
             }
         }
     }
+}
+
+dependencies {
+    testImplementation("org.jetbrains.kotlin:kotlin-test")
+    testImplementation("org.mockito:mockito-core:5.17.0")
+    implementation 'com.android.installreferrer:installreferrer:2.2'
+    implementation 'com.google.android.gms:play-services-ads-identifier:18.2.0'
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.0'
+    implementation "androidx.work:work-runtime-ktx:2.10.3"
 }

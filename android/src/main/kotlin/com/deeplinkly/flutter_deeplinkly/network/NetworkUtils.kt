@@ -20,8 +20,42 @@ object NetworkUtils {
         val conn = openConnection(url, apiKey).apply {
             setRequestProperty("Accept", "application/json")
         }
-        val response = conn.inputStream.bufferedReader().readText()
+        val responseCode = conn.responseCode
+        val response = if (responseCode == 200) {
+            conn.inputStream.bufferedReader().readText()
+        } else {
+            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "HTTP $responseCode"
+            throw Exception("HTTP $responseCode: $errorBody")
+        }
         return Pair(response, JSONObject(response))
+    }
+    
+    /**
+     * Resolve click with retry mechanism (for queue processing)
+     */
+    suspend fun resolveClickWithRetry(
+        url: String,
+        apiKey: String,
+        maxRetries: Int = 3,
+        initialDelayMs: Long = 100
+    ): Pair<String, JSONObject> = withContext(Dispatchers.IO) {
+        var lastException: Exception? = null
+        var delay = initialDelayMs
+        
+        repeat(maxRetries) { attempt ->
+            try {
+                return@withContext resolveClick(url, apiKey)
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < maxRetries - 1) {
+                    delay *= 2 // Exponential backoff
+                    kotlinx.coroutines.delay(delay)
+                    Logger.w("Resolve click retry ${attempt + 1}/$maxRetries after ${delay}ms")
+                }
+            }
+        }
+        
+        throw lastException ?: Exception("Failed to resolve click after $maxRetries attempts")
     }
 
     fun JSONObject.toMap(): Map<String, Any?> {

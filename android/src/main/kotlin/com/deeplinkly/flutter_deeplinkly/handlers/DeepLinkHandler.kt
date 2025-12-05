@@ -8,13 +8,14 @@ import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
 import com.deeplinkly.flutter_deeplinkly.network.NetworkUtils
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
 import com.deeplinkly.flutter_deeplinkly.util.EnrichmentUtils
+import com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue
 import io.flutter.plugin.common.MethodChannel
 
 object DeepLinkHandler {
     fun handleIntent(
         context: Context,
         intent: Intent?,
-        channel: MethodChannel,
+        channel: MethodChannel?,
         apiKey: String
     ) {
         try {
@@ -34,9 +35,12 @@ object DeepLinkHandler {
             // SAFETY: data is nullable; use safe calls everywhere
             val clickId: String? = data?.getQueryParameter("click_id")
             val code: String? = data?.pathSegments?.firstOrNull()
-            if (clickId == null && code == null) return
+            if (clickId == null && code == null) {
+                Logger.d("No click_id or code in intent, skipping")
+                return
+            }
 
-            // Collect enrichment (guarded)
+            // Collect enrichment (guarded) - CRITICAL: Preserve this data
             val enrichmentData = try {
                 EnrichmentUtils.collect().toMutableMap()
             } catch (e: Exception) {
@@ -52,23 +56,38 @@ object DeepLinkHandler {
             clickId?.let { enrichmentData["click_id"] = it }
             if (clickId == null && code != null) enrichmentData["code"] = code
 
-            val resolveUrl = if (clickId != null) {
-                "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=$clickId"
-            } else {
-                "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?code=$code"
-            }
+            // Queue for resolution if not immediately resolvable
+            val pendingResolve = DeepLinkQueue.PendingResolve(
+                clickId = clickId,
+                code = code,
+                uri = data?.toString(),
+                localParams = localParams,
+                enrichmentData = enrichmentData
+            )
 
             SdkRuntime.ioLaunch {
                 try {
-                    // Make sure your resolveClick returns Pair<Int, JSONObject> or similar
-                    val (_, json) = NetworkUtils.resolveClick(resolveUrl, apiKey)
+                    val resolveUrl = if (clickId != null) {
+                        "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=$clickId"
+                    } else {
+                        "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?code=$code"
+                    }
+
+                    // Try immediate resolution with fast retry
+                    val (_, json) = try {
+                        NetworkUtils.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 2, initialDelayMs = 50)
+                    } catch (e: Exception) {
+                        // If immediate resolution fails, queue for retry
+                        Logger.w("Immediate resolve failed, queueing for retry: ${e.message}")
+                        DeepLinkQueue.enqueueResolve(pendingResolve)
+                        throw e
+                    }
 
                     // Build a nullable String map from the JSON
                     val serverParams: Map<String, String?> = buildMap {
                         val keys = json.keys()
                         while (keys.hasNext()) {
                             val k = keys.next()
-                            // optString with default null preserves nullability
                             put(k, json.optString(k, null))
                         }
                     }
@@ -92,33 +111,85 @@ object DeepLinkHandler {
                         "ttclid" to (dartMap["ttclid"] as? String)
                     )
 
-                    // Persist once (normalized form). If you prefer merging local+server, you can
-                    // also do: val finalAttribution = localParams.toMutableMap().apply { putAll(serverParams) }
+                    // Persist attribution
                     AttributionStore.saveOnce(normalized)
 
-                    // Notify Flutter
-                    SdkRuntime.postToFlutter(channel, "onDeepLink", dartMap)
+                    // Create delivery item
+                    val delivery = DeepLinkQueue.PendingDelivery(
+                        resolvedData = dartMap,
+                        enrichmentData = enrichmentData,
+                        source = "deep_link"
+                    )
+
+                    // Always enqueue for reliability (handles Flutter not ready, app restart, etc.)
+                    DeepLinkQueue.enqueueDelivery(delivery)
+
+                    // Try immediate delivery if Flutter is ready
+                    // If successful, remove from queue to prevent QueueProcessor from sending again
+                    if (channel != null && SdkRuntime.isFlutterReady()) {
+                        SdkRuntime.postToFlutter(channel, "onDeepLink", dartMap)
+                        // Remove from queue after a short delay to allow postToFlutter to execute
+                        // This prevents QueueProcessor from sending it again
+                        val resolvedClickId = (dartMap["click_id"] as? String) ?: clickId
+                        resolvedClickId?.let { clickIdToRemove ->
+                            // Use a small delay to ensure postToFlutter has executed
+                            SdkRuntime.ioLaunch {
+                                kotlinx.coroutines.delay(100) // 100ms delay
+                                DeepLinkQueue.removeDeliveryByClickId(clickIdToRemove, "deep_link")
+                            }
+                        }
+                    }
 
                     // Fire enrichment (respecting your "sendOnce" semantics)
                     com.deeplinkly.flutter_deeplinkly.attribution.EnrichmentSender
                         .sendOnce(context, enrichmentData, "deep_link", apiKey)
 
+                    Logger.d("Successfully processed deep link: clickId=$clickId, code=$code")
+
                 } catch (e: Exception) {
-                    // Fallback to whatever we got directly from the URI (all safe calls!)
-                    val fallback = linkedMapOf<String, Any?>(
-                        "click_id" to clickId,
-                        "utm_source" to data?.getQueryParameter("utm_source"),
-                        "utm_medium" to data?.getQueryParameter("utm_medium"),
-                        "utm_campaign" to data?.getQueryParameter("utm_campaign"),
-                        "utm_term" to data?.getQueryParameter("utm_term"),
-                        "utm_content" to data?.getQueryParameter("utm_content"),
-                        "gclid" to data?.getQueryParameter("gclid"),
-                        "fbclid" to data?.getQueryParameter("fbclid"),
-                        "ttclid" to data?.getQueryParameter("ttclid")
+                    // CRITICAL: Preserve all data in error path
+                    Logger.e("Resolve failed, using fallback with preserved data", e)
+                    
+                    // Merge local params with any available enrichment data
+                    val fallback = linkedMapOf<String, Any?>().apply {
+                        put("click_id", clickId)
+                        // Add all local params
+                        localParams.forEach { (key, value) ->
+                            if (value != null) put(key, value)
+                        }
+                        // Preserve enrichment data that might be useful
+                        enrichmentData["android_reported_at"]?.let { put("android_reported_at", it) }
+                    }
+
+                    // Save attribution with fallback data
+                    AttributionStore.saveOnce(fallback.mapValues { it.value as? String })
+
+                    // Create delivery item
+                    val fallbackDelivery = DeepLinkQueue.PendingDelivery(
+                        resolvedData = fallback,
+                        enrichmentData = enrichmentData, // Preserve enrichment data
+                        source = "deep_link_fallback"
                     )
 
-                    AttributionStore.saveOnce(fallback.mapValues { it.value as? String })
-                    SdkRuntime.postToFlutter(channel, "onDeepLink", fallback)
+                    // Always enqueue for reliability
+                    DeepLinkQueue.enqueueDelivery(fallbackDelivery)
+
+                    // Try immediate delivery if Flutter is ready
+                    // If successful, remove from queue to prevent QueueProcessor from sending again
+                    if (channel != null && SdkRuntime.isFlutterReady()) {
+                        SdkRuntime.postToFlutter(channel, "onDeepLink", fallback)
+                        // Remove from queue after a short delay to allow postToFlutter to execute
+                        clickId?.let { clickIdToRemove ->
+                            // Use a small delay to ensure postToFlutter has executed
+                            SdkRuntime.ioLaunch {
+                                kotlinx.coroutines.delay(100) // 100ms delay
+                                DeepLinkQueue.removeDeliveryByClickId(clickIdToRemove, "deep_link_fallback")
+                            }
+                        }
+                    }
+
+                    // Ensure it's queued for retry
+                    DeepLinkQueue.enqueueResolve(pendingResolve)
 
                     NetworkUtils.reportError(
                         apiKey,
@@ -129,6 +200,7 @@ object DeepLinkHandler {
                 }
             }
         } catch (e: Exception) {
+            Logger.e("handleIntent outer crash", e)
             NetworkUtils.reportError(
                 apiKey,
                 "handleIntent outer crash",
