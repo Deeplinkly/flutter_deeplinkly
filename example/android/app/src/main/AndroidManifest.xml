@@ -40,7 +40,7 @@
         <!-- Deeplinkly API Key - Replace YOUR_API_KEY_HERE with your actual API key -->
         <meta-data
             android:name="com.deeplinkly.sdk.api_key"
-            android:value="YOUR_API_KEY_HERE" />
+            android:value="62da475f-4582-4f51-b106-9cb875b3cefb" />
     </application>
     <queries>
         <intent>

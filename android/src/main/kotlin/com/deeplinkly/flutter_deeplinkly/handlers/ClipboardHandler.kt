@@ -43,6 +43,8 @@ object ClipboardHandler {
                     }
                     
                     val uri = text.toUri()
+                    // For clipboard, we only have URI (no Intent extras available)
+                    // Priority: Try query parameters from clipboard URI
                     val clickId = uri.getQueryParameter("click_id")
                     val code = uri.pathSegments?.firstOrNull()
                     

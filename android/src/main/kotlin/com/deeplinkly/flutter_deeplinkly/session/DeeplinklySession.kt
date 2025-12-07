@@ -45,7 +45,10 @@ class DeeplinklySession(
     private fun handleIntent(intent: Intent?) {
         try {
             val data = intent?.data ?: return
-            val clickId = data.getQueryParameter("click_id")
+            // Priority 1: Try Intent extras first (from #Intent; section)
+            // Priority 2: Fall back to URI query parameters
+            val clickId = intent.getStringExtra("click_id")
+                ?: data.getQueryParameter("click_id")
             val code = data.pathSegments?.firstOrNull()
             if (clickId == null && code == null) return
 
