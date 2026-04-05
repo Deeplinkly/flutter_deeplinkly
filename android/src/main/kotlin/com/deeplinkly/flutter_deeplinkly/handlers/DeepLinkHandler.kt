@@ -5,7 +5,7 @@ import android.content.Intent
 import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
-import com.deeplinkly.flutter_deeplinkly.network.NetworkUtils
+import com.deeplinkly.flutter_deeplinkly.network.DeeplinklyNetwork
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
 import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyUtils
 import com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue
@@ -47,7 +47,7 @@ object DeepLinkHandler {
             val enrichmentData = try {
                 DeeplinklyUtils.collectEnrichment().toMutableMap()
             } catch (e: Exception) {
-                NetworkUtils.reportError(
+                DeeplinklyNetwork.reportError(
                     apiKey,
                     "collectEnrichmentData failed",
                     e.stackTraceToString(),
@@ -78,7 +78,7 @@ object DeepLinkHandler {
 
                     // Try immediate resolution with fast retry
                     val (_, json) = try {
-                        NetworkUtils.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 2, initialDelayMs = 50)
+                        DeeplinklyNetwork.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 2, initialDelayMs = 50)
                     } catch (e: Exception) {
                         // If immediate resolution fails, queue for retry
                         Logger.w("Immediate resolve failed, queueing for retry: ${e.message}")
@@ -95,7 +95,7 @@ object DeepLinkHandler {
                         }
                     }
 
-                    val dartMap = NetworkUtils.extractParamsFromJson(json, clickId)
+                    val dartMap = DeeplinklyNetwork.extractParamsFromJson(json, clickId)
 
                     // Ensure enrichment has the click_id we actually resolved
                     (dartMap["click_id"] as? String)?.let { enrichmentData["click_id"] = it }
@@ -194,7 +194,7 @@ object DeepLinkHandler {
                     // Ensure it's queued for retry
                     DeepLinkQueue.enqueueResolve(pendingResolve)
 
-                    NetworkUtils.reportError(
+                    DeeplinklyNetwork.reportError(
                         apiKey,
                         "resolve exception",
                         e.stackTraceToString(),
@@ -204,7 +204,7 @@ object DeepLinkHandler {
             }
         } catch (e: Exception) {
             Logger.e("handleIntent outer crash", e)
-            NetworkUtils.reportError(
+            DeeplinklyNetwork.reportError(
                 apiKey,
                 "handleIntent outer crash",
                 e.stackTraceToString()

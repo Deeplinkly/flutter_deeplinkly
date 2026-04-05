@@ -4,8 +4,7 @@ import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext
 import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.Prefs
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
-import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
-import com.deeplinkly.flutter_deeplinkly.network.NetworkUtils
+import com.deeplinkly.flutter_deeplinkly.network.DeeplinklyNetwork
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
@@ -180,13 +179,18 @@ object SdkRetryQueue {
                     try {
                         when (item.type) {
                             "enrichment" -> {
-                                NetworkUtils.sendEnrichmentNow(item.payload, apiKey)
+                                DeeplinklyNetwork.sendEnrichmentNow(item.payload, apiKey)
                                 Logger.d("Successfully retried enrichment")
                                 removeItem(item)
                             }
                             "error" -> {
-                                NetworkUtils.sendErrorNow(item.payload, apiKey)
+                                DeeplinklyNetwork.sendErrorNow(item.payload, apiKey)
                                 Logger.d("Successfully retried error report")
+                                removeItem(item)
+                            }
+                            "event" -> {
+                                DeeplinklyNetwork.sendEventNow(item.payload, apiKey)
+                                Logger.d("Successfully retried event")
                                 removeItem(item)
                             }
                             else -> {

@@ -1,8 +1,8 @@
-## 1.6.0
+## 1.7.0
 
 * Added Android Support For Deeplinking, Deferred Deeplinking
 * Added Support For Link Generation
 * Added Support For UTM & Ad Data
-* GDPR Compliance
+* GDPR Ready
 * Advanced Attribution
 * Added Support For iOS

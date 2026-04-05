@@ -9,7 +9,7 @@ import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext
 import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
-import com.deeplinkly.flutter_deeplinkly.network.NetworkUtils
+import com.deeplinkly.flutter_deeplinkly.network.DeeplinklyNetwork
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
 import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyUtils
 import com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue
@@ -60,7 +60,7 @@ object ClipboardHandler {
                     val enrichmentData = try {
                         DeeplinklyUtils.collectEnrichment().toMutableMap()
                     } catch (e: Exception) {
-                        NetworkUtils.reportError(apiKey, "collectEnrichmentData failed in clipboard", e.stackTraceToString(), clickId)
+                        DeeplinklyNetwork.reportError(apiKey, "collectEnrichmentData failed in clipboard", e.stackTraceToString(), clickId)
                         mutableMapOf()
                     }
                     enrichmentData["android_reported_at"] = System.currentTimeMillis().toString()
@@ -94,8 +94,8 @@ object ClipboardHandler {
                                 "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?code=$code"
                             }
                             
-                            val (_, json) = NetworkUtils.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 2, initialDelayMs = 50)
-                            val dartMap = NetworkUtils.extractParamsFromJson(json, clickId)
+                            val (_, json) = DeeplinklyNetwork.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 2, initialDelayMs = 50)
+                            val dartMap = DeeplinklyNetwork.extractParamsFromJson(json, clickId)
                             
                             // Update enrichment with resolved click_id
                             (dartMap["click_id"] as? String)?.let { enrichmentData["click_id"] = it }
@@ -168,7 +168,7 @@ object ClipboardHandler {
                             }
                             
                             // Keep in queue for retry
-                            NetworkUtils.reportError(apiKey, "clipboard resolve exception", e.stackTraceToString(), clickId)
+                            DeeplinklyNetwork.reportError(apiKey, "clipboard resolve exception", e.stackTraceToString(), clickId)
                         }
                     }
                     
@@ -182,12 +182,12 @@ object ClipboardHandler {
                     }
                 } catch (e: Exception) {
                     Logger.e("Clipboard check failed", e)
-                    NetworkUtils.reportError(apiKey, "clipboard check exception", e.stackTraceToString())
+                    DeeplinklyNetwork.reportError(apiKey, "clipboard check exception", e.stackTraceToString())
                 }
             }
         } catch (e: Exception) {
             Logger.e("ClipboardHandler outer crash", e)
-            NetworkUtils.reportError(apiKey, "ClipboardHandler outer crash", e.stackTraceToString())
+            DeeplinklyNetwork.reportError(apiKey, "ClipboardHandler outer crash", e.stackTraceToString())
         }
     }
 }

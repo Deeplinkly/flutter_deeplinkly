@@ -28,8 +28,24 @@ object DeeplinklyUtils {
     fun wasSessionEnrichmentSent(): Boolean = prefs.getBoolean("dl_sent_enrichment_this_session", false)
     fun markSessionEnrichmentSent() = prefs.edit().putBoolean("dl_sent_enrichment_this_session", true).apply()
 
-    fun getCustomUserId(): String? = prefs.getString("dl_custom_user_id", null)
-    fun setCustomUserId(id: String?) = prefs.edit().putString("dl_custom_user_id", id).apply()
+    private const val CUSTOM_USER_ID_KEY = "custom_user_id"
+    private const val LEGACY_CUSTOM_USER_ID_KEY = "dl_custom_user_id"
+
+    fun getCustomUserId(): String? {
+        var v = prefs.getString(CUSTOM_USER_ID_KEY, null)
+        if (v == null) {
+            v = prefs.getString(LEGACY_CUSTOM_USER_ID_KEY, null)
+            if (v != null) {
+                prefs.edit()
+                    .putString(CUSTOM_USER_ID_KEY, v)
+                    .remove(LEGACY_CUSTOM_USER_ID_KEY)
+                    .apply()
+            }
+        }
+        return v
+    }
+
+    fun setCustomUserId(id: String?) = prefs.edit().putString(CUSTOM_USER_ID_KEY, id).apply()
 
     fun isTrackingDisabled(): Boolean = prefs.getBoolean("tracking_disabled", false)
     fun setTrackingDisabled(disabled: Boolean) {

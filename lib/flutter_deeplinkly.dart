@@ -22,6 +22,10 @@ class _DeepLinkController {
 
 class FlutterDeeplinkly with WidgetsBindingObserver {
   static const _channel = MethodChannel('deeplinkly/channel');
+  static const int _maxEventNameLength = 64;
+  static const int _maxEventParamsCount = 25;
+  static const int _maxEventParamKeyLength = 64;
+  static const int _maxEventParamValueLength = 256;
 
   static final FlutterDeeplinkly _instance = FlutterDeeplinkly._internal();
   factory FlutterDeeplinkly() => _instance;
@@ -122,6 +126,67 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
     }
   }
 
+  /// Stable Deeplinkly device id for this install (same as `deeplinkly_device_id` / `X-Deeplinkly-User-Id` on the API).
+  static Future<String> getDeeplinklyId() async {
+    try {
+      final id = await _channel.invokeMethod<String>('getDeeplinklyId');
+      return id ?? '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  /// Sets your app’s user id (`custom_user_id`) for enrichment and backend user linking.
+  static Future<void> setUserId(String? userId) async {
+    try {
+      await _channel.invokeMethod<void>('setUserId', {'user_id': userId});
+    } catch (e) {
+      // Match other fire-and-forget SDK calls
+    }
+  }
+
+  /// Logs a custom event with optional custom parameters.
+  /// Returns true if accepted by native layer and backend.
+  static Future<bool> logEvent(
+    String eventName, {
+    Map<String, Object>? parameters,
+  }) async {
+    final normalized = eventName.trim();
+    if (normalized.isEmpty || normalized.length > _maxEventNameLength) {
+      return false;
+    }
+    final params = parameters ?? const <String, Object>{};
+    if (params.length > _maxEventParamsCount) {
+      return false;
+    }
+    for (final entry in params.entries) {
+      final key = entry.key.trim();
+      if (key.isEmpty || key.length > _maxEventParamKeyLength) {
+        return false;
+      }
+      final value = entry.value;
+      if (value is String && value.length > _maxEventParamValueLength) {
+        return false;
+      }
+      if (value is! String &&
+          value is! num &&
+          value is! bool &&
+          value is! List &&
+          value is! Map) {
+        return false;
+      }
+    }
+    try {
+      final ok = await _channel.invokeMethod<bool>('logEvent', {
+        'event_name': normalized,
+        'parameters': params,
+      });
+      return ok ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   /// Register callback for deep link events (deprecated - use deepLinkStream instead)
   /// This is kept for backward compatibility but uses stream internally
   @Deprecated('Use deepLinkStream.listen() instead for better flexibility')
@@ -194,5 +259,72 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
       _isLifecycleObserving = false;
     }
     _deepLinkController.close();
+  }
+}
+
+enum DeeplinklyEventType {
+  login,
+  signup,
+  logout,
+  purchase,
+  addToCart,
+  removeFromCart,
+  beginCheckout,
+  addPaymentInfo,
+  viewItem,
+  viewItemList,
+  search,
+  share,
+  invite,
+  appOpen,
+  sessionStart,
+  screenView,
+  levelUp,
+  tutorialComplete,
+  refund,
+}
+
+extension DeeplinklyEventTypeName on DeeplinklyEventType {
+  String get eventName {
+    switch (this) {
+      case DeeplinklyEventType.login:
+        return 'login';
+      case DeeplinklyEventType.signup:
+        return 'signup';
+      case DeeplinklyEventType.logout:
+        return 'logout';
+      case DeeplinklyEventType.purchase:
+        return 'purchase';
+      case DeeplinklyEventType.addToCart:
+        return 'add_to_cart';
+      case DeeplinklyEventType.removeFromCart:
+        return 'remove_from_cart';
+      case DeeplinklyEventType.beginCheckout:
+        return 'begin_checkout';
+      case DeeplinklyEventType.addPaymentInfo:
+        return 'add_payment_info';
+      case DeeplinklyEventType.viewItem:
+        return 'view_item';
+      case DeeplinklyEventType.viewItemList:
+        return 'view_item_list';
+      case DeeplinklyEventType.search:
+        return 'search';
+      case DeeplinklyEventType.share:
+        return 'share';
+      case DeeplinklyEventType.invite:
+        return 'invite';
+      case DeeplinklyEventType.appOpen:
+        return 'app_open';
+      case DeeplinklyEventType.sessionStart:
+        return 'session_start';
+      case DeeplinklyEventType.screenView:
+        return 'screen_view';
+      case DeeplinklyEventType.levelUp:
+        return 'level_up';
+      case DeeplinklyEventType.tutorialComplete:
+        return 'tutorial_complete';
+      case DeeplinklyEventType.refund:
+        return 'refund';
+    }
   }
 }

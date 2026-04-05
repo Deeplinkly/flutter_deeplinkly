@@ -23,9 +23,9 @@ enum NetworkUtils {
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        // IDs on every call
+        // IDs on every call (matches Django links.views enrich / resolve)
         if let custom = Prefs.customUserId() {
-            req.setValue(custom, forHTTPHeaderField: "X-Custom-User-Id")
+            req.setValue(custom, forHTTPHeaderField: "X-Deeplinkly-Custom-User-Id")
         }
         req.setValue(DeviceIdManager.getOrCreate(), forHTTPHeaderField: "X-Deeplinkly-User-Id")
 
@@ -34,16 +34,28 @@ enum NetworkUtils {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
 
-        URLSession.shared.dataTask(with: req) { data, _, err in
+        URLSession.shared.dataTask(with: req) { data, response, err in
             if let err = err {
                 completion(.failure(err))
                 return
             }
-            guard let data = data else {
-                completion(.failure(NetworkError.message("No data")))
+            guard let http = response as? HTTPURLResponse else {
+                completion(.failure(NetworkError.message("No HTTP response")))
                 return
             }
-            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            let status = http.statusCode
+            guard (200...299).contains(status) else {
+                let body = String(data: data ?? Data(), encoding: .utf8) ?? ""
+                completion(.failure(NetworkError.message("HTTP \(status): \(body)")))
+                return
+            }
+            let raw = data ?? Data()
+            let json: [String: Any]
+            if raw.isEmpty {
+                json = [:]
+            } else {
+                json = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] ?? [:]
+            }
             completion(.success(json))
         }.resume()
     }
@@ -92,6 +104,41 @@ enum NetworkUtils {
         sem.wait()
         if let e = err {
             throw NSError(domain: "enrich", code: -1, userInfo: [NSLocalizedDescriptionKey: e])
+        }
+    }
+
+    static func logEvent(
+        eventName: String,
+        parameters: [String: Any],
+        apiKey: String,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard !TrackingPreferences.isTrackingDisabled() else {
+            completion(false)
+            return
+        }
+        let body: [String: Any] = ["event_name": eventName, "parameters": parameters]
+        request(DomainConfig.logEvent, method: "POST", apiKey: apiKey, body: body) { result in
+            switch result {
+            case .success:
+                completion(true)
+            case .failure:
+                RetryQueue.enqueue(type: "event", payload: body)
+                completion(false)
+            }
+        }
+    }
+
+    static func sendEventNow(payload: [String: Any], apiKey: String) throws {
+        let sem = DispatchSemaphore(value: 0)
+        var err: String?
+        request(DomainConfig.logEvent, method: "POST", apiKey: apiKey, body: payload) { result in
+            if case let .failure(e) = result { err = e.localizedDescription }
+            sem.signal()
+        }
+        sem.wait()
+        if let e = err {
+            throw NSError(domain: "event", code: -1, userInfo: [NSLocalizedDescriptionKey: e])
         }
     }
 

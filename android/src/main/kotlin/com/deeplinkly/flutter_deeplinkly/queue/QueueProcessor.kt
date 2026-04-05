@@ -4,7 +4,7 @@ import android.content.Context
 import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
-import com.deeplinkly.flutter_deeplinkly.network.NetworkUtils
+import com.deeplinkly.flutter_deeplinkly.network.DeeplinklyNetwork
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
 import com.deeplinkly.flutter_deeplinkly.attribution.EnrichmentSender
 import io.flutter.plugin.common.MethodChannel
@@ -98,8 +98,8 @@ object QueueProcessor {
                 
                 Logger.d("Resolving: $resolveUrl (attempt ${pending.attemptCount + 1})")
                 
-                val (_, json) = NetworkUtils.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 3)
-                val resolvedData = NetworkUtils.extractParamsFromJson(json, pending.clickId)
+                val (_, json) = DeeplinklyNetwork.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 3)
+                val resolvedData = DeeplinklyNetwork.extractParamsFromJson(json, pending.clickId)
                 
                 // Merge enrichment data
                 val enrichmentData = pending.enrichmentData.toMutableMap()

@@ -1,0 +1,39 @@
+# Flutter / Dart tool outputs
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+.pub-cache/
+
+# Build outputs
+build/
+coverage/
+
+# Android generated files
+android/.gradle/
+android/app/build/
+android/build/
+
+# iOS generated files
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+
+# macOS generated files
+macos/Flutter/ephemeral/
+
+# Logs and local env files
+logs/
+*.log
+.env
+.env.*
+!.env.example
+
+# IDE / OS files
+.idea/
+.vscode/
+.DS_Store
+*.sw?

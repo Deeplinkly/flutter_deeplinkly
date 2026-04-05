@@ -65,6 +65,8 @@ enum RetryQueue {
                     try NetworkUtils.sendEnrichmentNow(payload: payload, apiKey: apiKey)
                 case "error":
                     try NetworkUtils.sendErrorNow(payload: payload, apiKey: apiKey)
+                case "event":
+                    try NetworkUtils.sendEventNow(payload: payload, apiKey: apiKey)
                 default:
                     Logger.w("RetryQueue: Unknown type \(type)")
                 }

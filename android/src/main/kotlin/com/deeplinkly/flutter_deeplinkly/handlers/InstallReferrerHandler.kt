@@ -10,7 +10,7 @@ import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.core.Prefs
 import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
-import com.deeplinkly.flutter_deeplinkly.network.NetworkUtils
+import com.deeplinkly.flutter_deeplinkly.network.DeeplinklyNetwork
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
 import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyUtils
 import com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue
@@ -51,7 +51,7 @@ object InstallReferrerHandler {
                         val enrichmentData = try {
                             DeeplinklyUtils.collectEnrichment().toMutableMap()
                         } catch (e: Exception) {
-                            NetworkUtils.reportError(apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
+                            DeeplinklyNetwork.reportError(apiKey, "collectEnrichmentData failed", e.stackTraceToString(), clickId)
                             mutableMapOf()
                         }
 
@@ -106,13 +106,13 @@ object InstallReferrerHandler {
 
                             SdkRuntime.ioLaunch {
                                 try {
-                                    val (_, json) = NetworkUtils.resolveClickWithRetry(
+                                    val (_, json) = DeeplinklyNetwork.resolveClickWithRetry(
                                         "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=$clickId", 
                                         apiKey,
                                         maxRetries = 2,
                                         initialDelayMs = 50
                                     )
-                                    val dartMap = NetworkUtils.extractParamsFromJson(json, clickId)
+                                    val dartMap = DeeplinklyNetwork.extractParamsFromJson(json, clickId)
                                     
                                     // Update enrichment with resolved click_id
                                     (dartMap["click_id"] as? String)?.let { enrichmentData["click_id"] = it }
@@ -154,7 +154,7 @@ object InstallReferrerHandler {
                                         .sendOnce(context, enrichmentData, "install_referrer", apiKey)
                                 } catch (e: Exception) {
                                     Logger.e("installReferrer resolve error", e)
-                                    NetworkUtils.reportError(apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
+                                    DeeplinklyNetwork.reportError(apiKey, "installReferrer resolve error", e.stackTraceToString(), clickId)
                                     // Keep in queue for retry
                                 }
                             }

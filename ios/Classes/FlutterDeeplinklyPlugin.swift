@@ -71,6 +71,10 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
 
     // MARK: - Flutter MethodChannel Handling
     @objc public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        if call.method == "getDeeplinklyId" {
+            result(DeviceIdManager.getOrCreate())
+            return
+        }
         guard sdkEnabled else {
             result([
                 "success": false,
@@ -100,11 +104,27 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
             TrackingPreferences.setTrackingDisabled(disabled)
             result(true)
 
-        case "setCustomUserId":
+        case "setCustomUserId", "setUserId":
             let userId = (call.arguments as? [String: Any])?["user_id"] as? String
-            Prefs.setCustomUserId(userId)
             UserIdManager.updateCustomUserId(newId: userId, apiKey: apiKey)
             result(true)
+
+        case "logEvent":
+            let eventName = ((call.arguments as? [String: Any])?["event_name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            var parameters = (call.arguments as? [String: Any])?["parameters"] as? [String: Any] ?? [:]
+            guard !eventName.isEmpty else {
+                result(false)
+                return
+            }
+            let seq = UserDefaults.standard.integer(forKey: "dl_event_seq") + 1
+            UserDefaults.standard.set(seq, forKey: "dl_event_seq")
+            parameters["_dl_event_seq"] = String(seq)
+            parameters["_dl_client_monotonic_ms"] = String(Int(ProcessInfo.processInfo.systemUptime * 1000))
+            parameters["_dl_client_wall_epoch_ms"] = String(Int(Date().timeIntervalSince1970 * 1000))
+            parameters["_dl_tz_offset_min"] = String(TimeZone.current.secondsFromGMT() / 60)
+            NetworkUtils.logEvent(eventName: eventName, parameters: parameters, apiKey: apiKey) { ok in
+                DispatchQueue.main.async { result(ok) }
+            }
 
         case "generateLink":
             guard let args = call.arguments as? [String: Any],

@@ -3,15 +3,18 @@ package com.deeplinkly.flutter_deeplinkly
 import android.app.Activity
 import android.content.Context
 import android.os.Build
+import android.os.SystemClock
 import androidx.annotation.NonNull
 import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext
 import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
+import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyUtils
 import com.deeplinkly.flutter_deeplinkly.core.Prefs
+import com.deeplinkly.flutter_deeplinkly.core.UserIdManager
 import com.deeplinkly.flutter_deeplinkly.handlers.DeepLinkHandler
 import com.deeplinkly.flutter_deeplinkly.handlers.InstallReferrerHandler
 import com.deeplinkly.flutter_deeplinkly.handlers.ClipboardHandler
-import com.deeplinkly.flutter_deeplinkly.network.NetworkUtils
+import com.deeplinkly.flutter_deeplinkly.network.DeeplinklyNetwork
 import com.deeplinkly.flutter_deeplinkly.retry.SdkRetryQueue
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
 import com.deeplinkly.flutter_deeplinkly.privacy.TrackingPreferences
@@ -34,7 +37,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     private val coroutineErrorHandler = CoroutineExceptionHandler { _, e ->
         try {
             val stackTrace = e.stackTraceToString()
-            NetworkUtils.reportError(apiKey, "Coroutine crash", stackTrace)
+            DeeplinklyNetwork.reportError(apiKey, "Coroutine crash", stackTrace)
         } catch (_: Exception) {}
     }
 
@@ -64,6 +67,10 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (call.method == "getDeeplinklyId") {
+            result.success(DeeplinklyUtils.getOrCreateDeviceId())
+            return
+        }
         if (!sdkEnabled) {
             result.success(
                 mapOf(
@@ -115,7 +122,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
 
                     SdkRuntime.ioLaunch {
                         try {
-                            val response = NetworkUtils.generateLink(payload, apiKey)
+                            val response = DeeplinklyNetwork.generateLink(payload, apiKey)
                             // Use main handler instead of activity
                             SdkRuntime.mainHandler.post {
                                 result.success(response)
@@ -150,10 +157,31 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                 result.success(true)
             }
 
-            "setCustomUserId" -> {
+            "setCustomUserId", "setUserId" -> {
                 val userId = call.argument<String>("user_id")
-                Prefs.of().edit().putString("custom_user_id", userId).apply()
+                UserIdManager.updateCustomUserId(userId, apiKey)
                 result.success(true)
+            }
+
+            "logEvent" -> {
+                val eventName = call.argument<String>("event_name")?.trim().orEmpty()
+                val params = (call.argument<Map<String, Any?>>("parameters") ?: emptyMap()).toMutableMap()
+                if (eventName.isBlank()) {
+                    result.success(false)
+                    return
+                }
+                val seq = (Prefs.of().getLong("dl_event_seq", 0L) + 1L).also {
+                    Prefs.of().edit().putLong("dl_event_seq", it).apply()
+                }
+                params["_dl_event_seq"] = seq.toString()
+                params["_dl_client_monotonic_ms"] = SystemClock.elapsedRealtime().toString()
+                params["_dl_client_wall_epoch_ms"] = System.currentTimeMillis().toString()
+                val offsetMin = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000
+                params["_dl_tz_offset_min"] = offsetMin.toString()
+                SdkRuntime.ioLaunch {
+                    val ok = DeeplinklyNetwork.logEvent(eventName, params, apiKey)
+                    SdkRuntime.mainHandler.post { result.success(ok) }
+                }
             }
 
             "setDebugMode" -> {
@@ -212,7 +240,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
             }
         } catch (e: Exception) {
             Logger.e("Plugin startup failure", e)
-            NetworkUtils.reportError(apiKey, "Plugin startup failure", e.stackTraceToString())
+            DeeplinklyNetwork.reportError(apiKey, "Plugin startup failure", e.stackTraceToString())
         }
     }
 

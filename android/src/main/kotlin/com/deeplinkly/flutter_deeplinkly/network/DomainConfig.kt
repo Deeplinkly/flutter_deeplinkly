@@ -9,7 +9,8 @@ object DomainConfig {
     const val RESOLVE_CLICK_ENDPOINT = "$BASE/resolve"
     const val GENERATE_LINK_ENDPOINT = "$BASE/generate-url"
     const val ENRICH_ENDPOINT = "$BASE/enrich"
-    const val ERROR_ENDPOINT = "$BASE/error/report"
+    const val LOG_EVENT_ENDPOINT = "$BASE/log-event"
+    const val ERROR_ENDPOINT = "$BASE/sdk-error"
 }
 
 
