@@ -211,7 +211,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                     DeepLinkHandler.handleIntent(act, intent, channel, apiKey)
                 }
             }
-            
+
             // Register for new intents
             binding.addOnNewIntentListener { newIntent ->
                 Logger.d("onNewIntent received")

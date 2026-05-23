@@ -61,12 +61,18 @@ enum NetworkUtils {
     }
 
     static func resolveClick(
-        _ url: String,
+        clickId: String?,
+        code: String?,
+        fingerprint: [String: Any],
         apiKey: String,
         onSuccess: @escaping ([String: Any]) -> Void,
         onError: @escaping (String) -> Void
     ) {
-        request(url, apiKey: apiKey) { result in
+        var body: [String: Any] = ["fingerprint": fingerprint]
+        if let c = clickId { body["click_id"] = c }
+        if let c = code { body["code"] = c }
+
+        request(DomainConfig.resolveClick, method: "POST", apiKey: apiKey, body: body) { result in
             switch result {
             case .success(let json):
                 onSuccess(json)
@@ -79,7 +85,10 @@ enum NetworkUtils {
     static func extractParams(json: [String: Any], clickId: String?) -> [String: Any] {
         var out: [String: Any] = ["click_id": clickId ?? (json["click_id"] as? String ?? NSNull())]
         if let params = json["params"] as? [String: Any] {
-            for (k, v) in params { out[k] = v }
+            out["params"] = params
+        }
+        if let prob = json["probability"] {
+            out["probability"] = prob
         }
         return out
     }

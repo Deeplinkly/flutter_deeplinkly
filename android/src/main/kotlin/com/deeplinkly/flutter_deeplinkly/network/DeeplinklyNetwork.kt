@@ -84,10 +84,62 @@ object DeeplinklyNetwork {
         out["click_id"] = clickId ?: json.optString("click_id", null)
 
         if (params != null) {
-            out["params"] = params.toString()
-            params.keys().forEach { key -> out[key] = params.opt(key) }
+            out["params"] = params.toMap()
+        }
+        if (!json.isNull("probability")) {
+            out["probability"] = json.optDouble("probability", -1.0).takeIf { it >= 0 }
         }
         return out
+    }
+
+    fun resolveWithFingerprint(
+        clickId: String?,
+        code: String?,
+        fingerprint: Map<String, Any?>,
+        apiKey: String
+    ): Pair<String, JSONObject> {
+        val body = JSONObject().apply {
+            clickId?.let { put("click_id", it) }
+            code?.let { put("code", it) }
+            put("fingerprint", JSONObject(fingerprint.filterValues { it != null }))
+        }
+        val conn = openConnection(RESOLVE_CLICK_ENDPOINT, apiKey, "POST").apply {
+            setRequestProperty("Accept", "application/json")
+        }
+        conn.outputStream.use { it.write(body.toString().toByteArray(StandardCharsets.UTF_8)) }
+        val responseCode = conn.responseCode
+        val responseBody = if (responseCode in 200..299) {
+            conn.inputStream.bufferedReader().readText()
+        } else {
+            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "HTTP $responseCode"
+            throw Exception("HTTP $responseCode: $errorBody")
+        }
+        return responseBody to JSONObject(responseBody)
+    }
+
+    suspend fun resolveWithFingerprintWithRetry(
+        clickId: String?,
+        code: String?,
+        fingerprint: Map<String, Any?>,
+        apiKey: String,
+        maxRetries: Int = 3,
+        initialDelayMs: Long = 100
+    ): Pair<String, JSONObject> = withContext(Dispatchers.IO) {
+        var lastException: Exception? = null
+        var delayMs = initialDelayMs
+        repeat(maxRetries) { attempt ->
+            try {
+                return@withContext resolveWithFingerprint(clickId, code, fingerprint, apiKey)
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < maxRetries - 1) {
+                    kotlinx.coroutines.delay(delayMs)
+                    Logger.w("resolveWithFingerprint retry ${attempt + 1}/$maxRetries after ${delayMs}ms")
+                    delayMs *= 2
+                }
+            }
+        }
+        throw lastException ?: Exception("Failed to resolve after $maxRetries attempts")
     }
 
     fun sendEnrichment(data: Map<String, String?>, apiKey: String) {

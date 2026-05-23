@@ -19,6 +19,7 @@ enum EnrichmentUtils {
         let screenWidth  = String(Int(Double(screen.width)  * Double(scale)))
         let screenHeight = String(Int(Double(screen.height) * Double(scale)))
         let pixelRatio   = String(format: "%.2f", scale)
+        let hardwareConcurrency = String(ProcessInfo.processInfo.processorCount)
 
         let dict: [String: String] = [
             "platform": "ios",
@@ -27,6 +28,7 @@ enum EnrichmentUtils {
             "screen_width": screenWidth,
             "screen_height": screenHeight,
             "pixel_ratio": pixelRatio,
+            "hardware_concurrency": hardwareConcurrency,
             "app_version": (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "",
             "app_build_number": (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "",
             "locale": locale.identifier,

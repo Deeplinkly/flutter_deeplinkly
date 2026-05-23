@@ -70,15 +70,20 @@ object DeepLinkHandler {
 
             SdkRuntime.ioLaunch {
                 try {
-                    val resolveUrl = if (clickId != null) {
-                        "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=$clickId"
-                    } else {
-                        "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?code=$code"
-                    }
+                    // Build fingerprint subset for matching (excludes device IDs and app info)
+                    val fingerprintKeys = setOf(
+                        "platform", "os_version", "screen_width", "screen_height",
+                        "pixel_ratio", "hardware_concurrency", "locale", "language",
+                        "timezone", "manufacturer", "brand", "device_model"
+                    )
+                    val fingerprint: Map<String, Any?> = enrichmentData
+                        .filterKeys { it in fingerprintKeys }
 
                     // Try immediate resolution with fast retry
                     val (_, json) = try {
-                        DeeplinklyNetwork.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 2, initialDelayMs = 50)
+                        DeeplinklyNetwork.resolveWithFingerprintWithRetry(
+                            clickId, code, fingerprint, apiKey, maxRetries = 2, initialDelayMs = 50
+                        )
                     } catch (e: Exception) {
                         // If immediate resolution fails, queue for retry
                         Logger.w("Immediate resolve failed, queueing for retry: ${e.message}")

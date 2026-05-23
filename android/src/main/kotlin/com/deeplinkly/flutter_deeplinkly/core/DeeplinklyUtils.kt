@@ -137,10 +137,12 @@ object DeeplinklyUtils {
         val now = System.currentTimeMillis()
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
         sdf.timeZone = TimeZone.getTimeZone("UTC")
+        val hardwareConcurrency = Runtime.getRuntime().availableProcessors()
         val base = mutableMapOf(
             "screen_width" to screenWidth.toString(),
             "screen_height" to screenHeight.toString(),
             "pixel_ratio" to pixelRatio.toString(),
+            "hardware_concurrency" to hardwareConcurrency.toString(),
             "last_opened_at" to sdf.format(Date(now)),
             "hardware_fingerprint" to makeFingerprint(screenWidth, screenHeight, pixelRatio)
         )

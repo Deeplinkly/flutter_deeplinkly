@@ -1,122 +1,198 @@
-# Deeplinkly Flutter SDK
+# flutter_deeplinkly
 
-**Deeplinkly** is a developer-first deep linking and deferred deep linking SaaS — a smarter, more affordable alternative to Branch.io and AppsFlyer.
-Engineered for seamless integration and rich insights, Deeplinkly gives you more actionable data than any other platform — without the complexity or bloated pricing.
----
+`flutter_deeplinkly` is Deeplinkly's official Flutter SDK for deep linking, deferred deep linking, attribution enrichment, and event tracking across Android and iOS.
 
-## 🚀 Features
+## Features
 
-- ✅ Deep linking
-- ✅ Deferred deep linking
-- ✅ Read API keys from native config (`AndroidManifest.xml`, `Info.plist`)
-- ✅ Automatically opens the app or fallback to store
-- ✅ Lightweight native plugin
----
+- Deep link resolution via a stream-based API
+- Deferred deep linking and install attribution
+- Stable Deeplinkly device id retrieval
+- Custom user id association for enrichment
+- Strongly-validated custom event logging
+- Deeplink URL generation with metadata payloads
 
-## 📦 Installation
+## Installation
 
-Add to your `pubspec.yaml`:
+Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_deeplinkly: ^1.1.3
+  flutter_deeplinkly: ^1.7.0
 ```
 
----
+Then run:
 
-## 🛠 Platform Setup
+```bash
+flutter pub get
+```
 
-### Android
+## Platform setup
 
-1. **Add Intent Filter** in `AndroidManifest.xml`:
+### Android (`android/app/src/main/AndroidManifest.xml`)
+
+Add your deep link intent filter under your `MainActivity`:
 
 ```xml
-
 <activity android:name=".MainActivity">
-    <intent-filter android:autoVerify="true">
-        <action android:name="android.intent.action.VIEW" />
-        <category android:name="android.intent.category.DEFAULT" />
-        <category android:name="android.intent.category.BROWSABLE" />
-        <data android:scheme="yourapp" android:host="deeplink" />
-    </intent-filter>
+  <intent-filter android:autoVerify="true">
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data android:scheme="yourapp" android:host="deeplink" />
+  </intent-filter>
 </activity>
 ```
 
-2. **Set your Deeplinkly API key** in `AndroidManifest.xml`:
+Add Deeplinkly API key metadata:
 
 ```xml
-
-<meta-data android:name="DEEPLINKLY_API_KEY" android:value="your_api_key_here" />
+<application ...>
+  <meta-data
+      android:name="DEEPLINKLY_API_KEY"
+      android:value="your_api_key_here" />
+</application>
 ```
 
-### iOS
+### iOS (`ios/Runner/Info.plist`)
 
-1. **Update `Info.plist`**:
+Register URL schemes:
 
 ```xml
-
-<key>CFBundleURLTypes</key><array>
-<dict>
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
     <key>CFBundleURLSchemes</key>
     <array>
-        <string>yourapp</string>
+      <string>yourapp</string>
     </array>
-</dict>
+  </dict>
 </array>
-
-<key>DEEPLINKLY_API_KEY</key><string>your_api_key_here</string>
 ```
 
-2. **Enable Universal Links (Optional)** if using custom domain & `apple-app-site-association`.
+Add Deeplinkly API key:
 
----
+```xml
+<key>DEEPLINKLY_API_KEY</key>
+<string>your_api_key_here</string>
+```
 
-## 🔧 Usage
+For universal links, also configure associated domains and host your `apple-app-site-association`.
 
-In your `main.dart`:
+## Quick start
+
+Initialize before `runApp()` and subscribe to incoming deep links:
 
 ```dart
+import 'package:flutter/material.dart';
 import 'package:flutter_deeplinkly/flutter_deeplinkly.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterDeeplinkly.init();
+  runApp(const MyApp());
+}
 
-  final path = await FlutterDeeplinklyPlugin.getInitialLink();
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
 
-  if (path != null) {
-    print('Received deep link: $path');
-    // Navigate accordingly
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    FlutterDeeplinkly.instance.deepLinkStream.listen((params) {
+      debugPrint("Deep link payload: $params");
+      // Route user to relevant in-app destination.
+    });
   }
 
-  runApp(MyApp());
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      home: Scaffold(body: Center(child: Text("Deeplinkly ready"))),
+    );
+  }
 }
 ```
 
----
+## Core API
 
-## 🧪 Testing
+### Attribution and identity
 
-- Use `adb` to simulate install referrer:
+```dart
+final attribution = await FlutterDeeplinkly.getInstallAttribution();
+final deeplinklyId = await FlutterDeeplinkly.getDeeplinklyId();
+await FlutterDeeplinkly.setUserId("user_123");
+```
+
+### Event logging
+
+```dart
+final ok = await FlutterDeeplinkly.logEvent(
+  "purchase",
+  parameters: {
+    "order_id": "ord_42",
+    "amount": 49.99,
+    "currency": "USD",
+    "is_first_purchase": true,
+  },
+);
+```
+
+### Link generation
+
+```dart
+import 'package:flutter_deeplinkly/models/deeplinkly.dart';
+
+final result = await FlutterDeeplinkly.generateLink(
+  content: const DeeplinklyContent(
+    canonicalIdentifier: "product/sku_42",
+    title: "Pro Plan",
+    description: "Upgrade to Pro",
+    metadata: {"plan": "pro"},
+  ),
+  options: const DeeplinklyLinkOptions(
+    channel: "email",
+    feature: "upgrade_campaign",
+  ),
+);
+
+if (result.success) {
+  debugPrint("Generated link: ${result.url}");
+}
+```
+
+## Validation rules for `logEvent`
+
+- Event name must be non-empty and at most 64 chars
+- At most 25 parameters
+- Parameter keys must be non-empty and at most 64 chars
+- String parameter values must be at most 256 chars
+- Supported value types: `String`, `num`, `bool`, `List`, `Map`
+
+## Testing
+
+Trigger Android install referrer test payload:
 
 ```bash
 adb shell am broadcast -a com.android.vending.INSTALL_REFERRER -n your.package.name/com.google.android.gms.measurement.AppMeasurementInstallReferrerReceiver --es "referrer" "utm_source=test&utm_medium=deeplink&utm_campaign=demo"
 ```
 
+## Documentation
+
+- Website docs: <https://www.deeplinkly.com/docs/sdk/flutter>
+- Repo docs: [`docs/FLUTTER_SDK.md`](docs/FLUTTER_SDK.md)
+- AI skill (autonomous integrator): [`.cursor/skills/flutter-sdk/SKILL.md`](.cursor/skills/flutter-sdk/SKILL.md)
+
 ## Support
 
-For support, questions, or licensing inquiries, please contact:
+- Email: <support@deeplinkly.com>
+- Issues: <https://github.com/deeplinkly/flutter_deeplinkly/issues>
 
-📧 **Sahil Asopa**  
-✉️ [sahilasopa12@gmail.com](mailto:sahilasopa12@gmail.com)
----
+## License
 
-## 📄 License
-
-Copyright (c) 2025 Sahil Asopa
-
-This software is proprietary and confidential. Unauthorized copying of this file, via any medium, is strictly prohibited.
-
-All rights reserved.
-
-This software and its source code may not be copied, modified, distributed, or used in any way without express written permission from the author or the owning company.
+MIT License. See [`LICENSE`](LICENSE).
 

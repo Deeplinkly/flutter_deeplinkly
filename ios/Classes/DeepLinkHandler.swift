@@ -19,14 +19,16 @@ enum DeepLinkHandler {
             enrichment["code"] = c
         }
 
-        let resolveUrl: String
-        if let c = clickId {
-            resolveUrl = "\(DomainConfig.resolveClick)?click_id=\(c)"
-        } else {
-            resolveUrl = "\(DomainConfig.resolveClick)?code=\(code!)"
-        }
+        // Subset of enrichment used for fingerprint matching
+        let fingerprintKeys: Set<String> = [
+            "platform", "os_version", "screen_width", "screen_height",
+            "pixel_ratio", "hardware_concurrency", "locale", "language", "timezone",
+        ]
+        let fingerprint: [String: Any] = enrichment
+            .filter { fingerprintKeys.contains($0.key) }
+            .reduce(into: [:]) { $0[$1.key] = $1.value }
 
-        NetworkUtils.resolveClick(resolveUrl, apiKey: apiKey) { json in
+        NetworkUtils.resolveClick(clickId: clickId, code: code, fingerprint: fingerprint, apiKey: apiKey) { json in
             let dartMap = NetworkUtils.extractParams(json: json, clickId: clickId)
             if let resolvedClick = dartMap["click_id"] as? String {
                 enrichment["click_id"] = resolvedClick
