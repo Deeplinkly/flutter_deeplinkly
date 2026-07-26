@@ -15,10 +15,6 @@ class MethodChannelFlutterDeeplinkly extends FlutterDeeplinklyPlatform {
     return version;
   }
 
-  Future<void> setCustomUserId(String userId) async {
-    await methodChannel.invokeMethod("setCustomUserId", {"user_id": userId});
-  }
-
   Future<void> setTrackingEnabled({bool enabled = true}) async {
     await methodChannel.invokeMethod("disableTracking", {"disabled": !enabled});
   }
