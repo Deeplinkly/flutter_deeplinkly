@@ -5,6 +5,7 @@ import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.Prefs
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.network.DeeplinklyNetwork
+import com.deeplinkly.flutter_deeplinkly.network.isTerminalHttp
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
@@ -199,12 +200,20 @@ object SdkRetryQueue {
                             }
                         }
                     } catch (e: Exception) {
-                        Logger.e("Retry failed for ${item.type}, will retry later", e)
-                        val updatedItem = item.copy(
-                            attemptCount = item.attemptCount + 1,
-                            lastAttemptTime = System.currentTimeMillis()
-                        )
-                        updateItem(updatedItem)
+                        // A payload the server has already rejected outright never
+                        // becomes valid; retrying it just replays the same request
+                        // on every launch until the attempt cap runs out.
+                        if (e.isTerminalHttp()) {
+                            Logger.w("Dropping ${item.type} after terminal response: ${e.message}")
+                            removeItem(item)
+                        } else {
+                            Logger.e("Retry failed for ${item.type}, will retry later", e)
+                            val updatedItem = item.copy(
+                                attemptCount = item.attemptCount + 1,
+                                lastAttemptTime = System.currentTimeMillis()
+                            )
+                            updateItem(updatedItem)
+                        }
                     }
                 }
             } catch (e: Exception) {

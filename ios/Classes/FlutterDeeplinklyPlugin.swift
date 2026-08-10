@@ -21,6 +21,23 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         instance.channel = ch
         staticChannel = ch
         registrar.addMethodCallDelegate(instance, channel: ch)
+        // Without this the plugin never sees a Universal Link unless the host
+        // app's AppDelegate forwards one by hand, which nothing documented it
+        // as needing to do — so no deep link reached the SDK at all.
+        registrar.addApplicationDelegate(instance)
+
+        // Apps on the UIScene lifecycle (FlutterSceneDelegate in Info.plist)
+        // never fire the UIApplicationDelegate callbacks above; scene events go
+        // only to delegates registered here. Resolved dynamically so the plugin
+        // still builds against Flutter versions predating addSceneDelegate:.
+        if #available(iOS 13.0, *) {
+            let selector = NSSelectorFromString("addSceneDelegate:")
+            let target = registrar as AnyObject
+            if target.responds(to: selector) {
+                _ = target.perform(selector, with: instance)
+            }
+        }
+
         instance.bootstrap()
 
             // ✅ Flush any pending universal link that arrived before channel setup
@@ -31,7 +48,13 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
     }
 
     // MARK: - Universal Link Bridge
-    /// Called from AppDelegate when a Universal Link is opened.
+    /// Entry point for a Universal Link.
+    ///
+    /// The plugin now registers as an application delegate and picks these up
+    /// itself; this stays public because integration guides told host apps to
+    /// call it from their own AppDelegate, and those apps must keep working.
+    /// Calling it twice for one link is harmless — the resolve is idempotent
+    /// and `AttributionStore.saveOnce` is write-once.
     public static func handleUniversalLink(_ url: URL) {
         guard let ch = staticChannel else {
             pendingUniversalLink = url
@@ -45,6 +68,83 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         }
         DeepLinkHandler.handle(url: url, channel: ch, apiKey: key)
 
+    }
+
+    // MARK: - FlutterApplicationLifeCycleDelegate
+
+    public func application(
+        _ application: UIApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([Any]) -> Void
+    ) -> Bool {
+        guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+            let url = userActivity.webpageURL
+        else { return false }
+        FlutterDeeplinklyPlugin.handleUniversalLink(url)
+        // Not "handled" in the exclusive sense — other plugins may want it too.
+        return false
+    }
+
+    public func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        FlutterDeeplinklyPlugin.handleUniversalLink(url)
+        return false
+    }
+
+    // MARK: - FlutterSceneLifeCycleDelegate
+    //
+    // The scene-lifecycle equivalents of the two methods above. Declared with
+    // explicit ObjC selectors and dispatched via respondsToSelector by
+    // FlutterPluginSceneLifeCycleDelegate, so no protocol conformance (and
+    // therefore no hard dependency on a recent Flutter header) is needed.
+    // Each returns false: a deep link is not ours exclusively, and other
+    // plugins must still see it.
+
+    /// Cold launch. A Universal Link that starts the app arrives here, not via
+    /// scene(_:continueUserActivity:) — missing this loses exactly the case
+    /// deferred deep linking exists for.
+    @available(iOS 13.0, *)
+    @objc(scene:willConnectToSession:options:)
+    public func scene(
+        _ scene: UIScene,
+        willConnectTo session: UISceneSession,
+        options connectionOptions: UIScene.ConnectionOptions?
+    ) -> Bool {
+        guard let connectionOptions = connectionOptions else { return false }
+        for activity in connectionOptions.userActivities
+        where activity.activityType == NSUserActivityTypeBrowsingWeb {
+            if let url = activity.webpageURL {
+                FlutterDeeplinklyPlugin.handleUniversalLink(url)
+            }
+        }
+        for context in connectionOptions.urlContexts {
+            FlutterDeeplinklyPlugin.handleUniversalLink(context.url)
+        }
+        return false
+    }
+
+    /// Warm launch: the app was already running when the link was tapped.
+    @available(iOS 13.0, *)
+    @objc(scene:continueUserActivity:)
+    public func scene(_ scene: UIScene, continueUserActivity userActivity: NSUserActivity) -> Bool {
+        guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+            let url = userActivity.webpageURL
+        else { return false }
+        FlutterDeeplinklyPlugin.handleUniversalLink(url)
+        return false
+    }
+
+    /// Custom URL scheme while running.
+    @available(iOS 13.0, *)
+    @objc(scene:openURLContexts:)
+    public func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) -> Bool {
+        for context in URLContexts {
+            FlutterDeeplinklyPlugin.handleUniversalLink(context.url)
+        }
+        return false
     }
 
     // MARK: - Initialization
@@ -64,8 +164,24 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         FlutterDeeplinklyPlugin.storedApiKey = key
 
         StartupEnrichment.schedule(apiKey: apiKey, channel: channel)
-//        PasteboardHandler.check(channel: channel, apiKey: apiKey)
-        RetryQueue.retryAll(apiKey: apiKey)
+
+        // Capture locally: these closures outlive bootstrap() and have no
+        // reason to keep the plugin instance alive.
+        let channel = self.channel!
+        let apiKey = self.apiKey
+
+        // Pasteboard access has to happen on the main thread, and this is the
+        // only deferred deep link channel iOS offers — see PasteboardHandler.
+        DispatchQueue.main.async {
+            PasteboardHandler.check(channel: channel, apiKey: apiKey)
+        }
+
+        // retryAll blocks on a semaphore per item (15s timeout, up to 50
+        // items). Running it inline froze the UI during plugin registration.
+        DispatchQueue.global(qos: .utility).async {
+            RetryQueue.retryAll(apiKey: apiKey)
+            DeepLinkHandler.drainPendingResolves(channel: channel, apiKey: apiKey)
+        }
     }
 
 
@@ -87,6 +203,26 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         switch call.method {
         case "getPlatformVersion":
             result("iOS \(UIDevice.current.systemVersion)")
+
+        case "flutterReady":
+            // Dart has attached its onDeepLink handler. Anything the native
+            // side produced before now — the pasteboard read in particular —
+            // is buffered in SdkRuntime and flushes here.
+            SdkRuntime.setFlutterReady(channel)
+            result(true)
+
+        case "onLifecycleChange":
+            let state = (call.arguments as? [String: Any])?["state"] as? String ?? ""
+            Logger.d("Lifecycle: \(state)")
+            if state == "resumed" {
+                SdkRuntime.setFlutterReady(channel)
+            }
+            result(true)
+
+        case "setDebugMode":
+            let enabled = (call.arguments as? [String: Any])?["enabled"] as? Bool ?? false
+            Logger.setDebugMode(enabled)
+            result(true)
 
         case "getInstallAttribution":
             result(AttributionStore.get())

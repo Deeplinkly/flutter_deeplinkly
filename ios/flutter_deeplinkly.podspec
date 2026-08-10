@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_deeplinkly'
-  s.version          = '0.0.1'
+  s.version          = '1.8.0'
   s.summary          = 'Flutter Deeplinkly SDK'
   s.description      = <<-DESC
 Flutter Deeplinking Project
@@ -21,9 +21,9 @@ Flutter Deeplinking Project
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
   s.swift_version = '5.0'
 
-  # If your plugin requires a privacy manifest, for example if it uses any
-  # required reason APIs, update the PrivacyInfo.xcprivacy file to describe your
-  # plugin's privacy impact, and then uncomment this line. For more information,
-  # see https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
-  # s.resource_bundles = {'flutter_deeplinkly_privacy' => ['Resources/PrivacyInfo.xcprivacy']}
+  # Required: the SDK uses UserDefaults and ProcessInfo.systemUptime, both of
+  # which are required-reason APIs. Without this line the manifest is never
+  # bundled and App Store Connect rejects the upload.
+  # https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
+  s.resource_bundles = {'flutter_deeplinkly_privacy' => ['Resources/PrivacyInfo.xcprivacy']}
 end

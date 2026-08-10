@@ -95,23 +95,24 @@ object ClipboardHandler {
                             }
                             
                             val (_, json) = DeeplinklyNetwork.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 2, initialDelayMs = 50)
+
+                            // An unknown click id comes back 200 with stale: true;
+                            // a pasteboard link that no longer resolves must not be
+                            // delivered as a live one carrying no params.
+                            if (DeeplinklyNetwork.isStale(json)) {
+                                Logger.w("Clipboard resolve returned a stale click; suppressing delivery.")
+                                DeepLinkQueue.removeResolve(pendingResolve)
+                                return@ioLaunch
+                            }
+
                             val dartMap = DeeplinklyNetwork.extractParamsFromJson(json, clickId)
                             
                             // Update enrichment with resolved click_id
                             (dartMap["click_id"] as? String)?.let { enrichmentData["click_id"] = it }
                             
                             // Save attribution
-                            val normalized = linkedMapOf<String, String?>(
-                                "source" to "clipboard",
-                                "click_id" to ((dartMap["click_id"] as? String) ?: clickId),
-                                "utm_source" to (dartMap["utm_source"] as? String),
-                                "utm_medium" to (dartMap["utm_medium"] as? String),
-                                "utm_campaign" to (dartMap["utm_campaign"] as? String),
-                                "utm_term" to (dartMap["utm_term"] as? String),
-                                "utm_content" to (dartMap["utm_content"] as? String),
-                                "gclid" to (dartMap["gclid"] as? String),
-                                "fbclid" to (dartMap["fbclid"] as? String),
-                                "ttclid" to (dartMap["ttclid"] as? String)
+                            val normalized = DeeplinklyNetwork.attributionSnapshot(
+                                dartMap, source = "clipboard", fallbackClickId = clickId
                             )
                             AttributionStore.saveOnce(normalized)
                             
@@ -146,15 +147,15 @@ object ClipboardHandler {
                         } catch (e: Exception) {
                             Logger.e("Clipboard resolve failed, using fallback", e)
                             
-                            // Fallback: use local params
-                            val fallback = linkedMapOf<String, Any?>().apply {
-                                put("click_id", clickId)
-                                localParams.forEach { (key, value) ->
-                                    if (value != null) put(key, value)
-                                }
-                            }
-                            
-                            AttributionStore.saveOnce(fallback.mapValues { it.value as? String })
+                            // Fallback: use local params, in the same
+                            // {click_id, params} envelope as a resolved link.
+                            val fallback = DeeplinklyNetwork.fallbackPayload(clickId, localParams)
+
+                            AttributionStore.saveOnce(
+                                DeeplinklyNetwork.attributionSnapshot(
+                                    fallback, source = "clipboard", fallbackClickId = clickId
+                                )
+                            )
                             
                             val fallbackDelivery = DeepLinkQueue.PendingDelivery(
                                 resolvedData = fallback,

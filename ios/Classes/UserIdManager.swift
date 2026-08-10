@@ -14,13 +14,17 @@ enum UserIdManager {
         // Optional: log it
         Logger.d("UserIdManager: updated custom user ID → \(newId ?? "nil")")
 
-        // If you want to trigger enrichment immediately after ID change:
+        // Link the id to the TenantUser now. force: linking a login has nothing
+        // to do with attribution, so it must not be gated on a UTM being
+        // present — a user who installed the app organically would otherwise
+        // never be linked at all.
         var enrichmentData = EnrichmentUtils.collect()
         enrichmentData["custom_user_id"] = newId
         EnrichmentSender.sendOnce(
             enrichmentData: enrichmentData,
             source: "custom_user_id",
-            apiKey: apiKey
+            apiKey: apiKey,
+            force: true
         )
     }
 }

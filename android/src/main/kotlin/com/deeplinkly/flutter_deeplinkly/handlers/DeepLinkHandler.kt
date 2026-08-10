@@ -91,23 +91,23 @@ object DeepLinkHandler {
                         throw e
                     }
 
+                    // An unknown click id comes back 200 with stale: true.
+                    // Delivering it would fire a deep link carrying no params at
+                    // all, on every cold start until the cached id was cleared.
+                    if (DeeplinklyNetwork.isStale(json)) {
+                        Logger.w("Resolve returned a stale click; suppressing delivery.")
+                        DeepLinkQueue.removeResolve(pendingResolve)
+                        return@ioLaunch
+                    }
+
                     val dartMap = DeeplinklyNetwork.extractParamsFromJson(json, clickId)
 
                     // Ensure enrichment has the click_id we actually resolved
                     (dartMap["click_id"] as? String)?.let { enrichmentData["click_id"] = it }
 
                     // Normalized attribution snapshot we want to persist (stable keys)
-                    val normalized = linkedMapOf<String, String?>(
-                        "source" to "deep_link",
-                        "click_id" to ((dartMap["click_id"] as? String) ?: clickId),
-                        "utm_source" to (dartMap["utm_source"] as? String),
-                        "utm_medium" to (dartMap["utm_medium"] as? String),
-                        "utm_campaign" to (dartMap["utm_campaign"] as? String),
-                        "utm_term" to (dartMap["utm_term"] as? String),
-                        "utm_content" to (dartMap["utm_content"] as? String),
-                        "gclid" to (dartMap["gclid"] as? String),
-                        "fbclid" to (dartMap["fbclid"] as? String),
-                        "ttclid" to (dartMap["ttclid"] as? String)
+                    val normalized = DeeplinklyNetwork.attributionSnapshot(
+                        dartMap, source = "deep_link", fallbackClickId = clickId
                     )
 
                     // Persist attribution
@@ -149,19 +149,16 @@ object DeepLinkHandler {
                     // CRITICAL: Preserve all data in error path
                     Logger.e("Resolve failed, using fallback with preserved data", e)
                     
-                    // Merge local params with any available enrichment data
-                    val fallback = linkedMapOf<String, Any?>().apply {
-                        put("click_id", clickId)
-                        // Add all local params
-                        localParams.forEach { (key, value) ->
-                            if (value != null) put(key, value)
-                        }
-                        // Preserve enrichment data that might be useful
-                        enrichmentData["android_reported_at"]?.let { put("android_reported_at", it) }
-                    }
+                    // Same {click_id, params} envelope as a resolved link, so Dart
+                    // reads an unresolved deep link exactly like a resolved one.
+                    val fallback = DeeplinklyNetwork.fallbackPayload(clickId, localParams)
 
                     // Save attribution with fallback data
-                    AttributionStore.saveOnce(fallback.mapValues { it.value as? String })
+                    AttributionStore.saveOnce(
+                        DeeplinklyNetwork.attributionSnapshot(
+                            fallback, source = "deep_link", fallbackClickId = clickId
+                        )
+                    )
 
                     // Create delivery item
                     val fallbackDelivery = DeepLinkQueue.PendingDelivery(

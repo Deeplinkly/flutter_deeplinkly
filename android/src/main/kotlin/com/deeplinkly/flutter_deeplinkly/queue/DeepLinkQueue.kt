@@ -3,6 +3,7 @@ package com.deeplinkly.flutter_deeplinkly.queue
 import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext
 import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.Prefs
+import com.deeplinkly.flutter_deeplinkly.network.toValueMap
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
@@ -100,11 +101,12 @@ object DeepLinkQueue {
                 val resolvedObj = json.optJSONObject("resolved_data") ?: JSONObject()
                 val enrichmentObj = json.optJSONObject("enrichment_data") ?: JSONObject()
                 
-                val resolvedData = mutableMapOf<String, Any?>()
-                resolvedObj.keys().forEach { key ->
-                    resolvedData[key] = resolvedObj.opt(key)
-                }
-                
+                // toValueMap, not opt(): a persisted payload's nested "params"
+                // comes back as a JSONObject, which the method-channel codec
+                // cannot encode - the delivery would fail for every link that
+                // waited in the queue.
+                val resolvedData = resolvedObj.toValueMap().toMutableMap()
+
                 val enrichmentData = mutableMapOf<String, String?>()
                 enrichmentObj.keys().forEach { key ->
                     enrichmentData[key] = enrichmentObj.optString(key, null)
@@ -247,6 +249,15 @@ object DeepLinkQueue {
     /**
      * Check if a resolve should be retried (exponential backoff)
      */
+    /**
+     * True once an item has burned its retry budget and should be dropped.
+     *
+     * Callers need this separately from [shouldRetry], which returns false both
+     * for an exhausted item and for one that is merely still backing off.
+     */
+    fun isExhausted(pending: PendingResolve): Boolean =
+        pending.attemptCount >= MAX_RETRY_ATTEMPTS
+
     fun shouldRetry(pending: PendingResolve): Boolean {
         if (pending.attemptCount >= MAX_RETRY_ATTEMPTS) {
             return false

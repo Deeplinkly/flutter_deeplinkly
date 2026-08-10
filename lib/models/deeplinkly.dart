@@ -25,7 +25,13 @@ class DeeplinklyContent {
 class DeeplinklyLinkOptions {
   final String channel;
   final String feature;
-  final Map<String, dynamic>? tags;
+
+  /// Free-form labels attached to the generated link.
+  ///
+  /// This was previously typed `Map<String, dynamic>?`, which the API never
+  /// accepted - it only understands a list (or a comma-separated string), so
+  /// every map sent here was silently discarded server-side.
+  final List<String>? tags;
 
   const DeeplinklyLinkOptions({
     required this.channel,
@@ -36,7 +42,7 @@ class DeeplinklyLinkOptions {
   Map<String, dynamic> toJson() => {
         'channel': channel,
         'feature': feature,
-        if (tags != null) 'tags': tags,
+        if (tags != null && tags!.isNotEmpty) 'tags': tags,
       };
 }
 

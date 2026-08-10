@@ -10,9 +10,13 @@ import org.junit.Assert.*
 import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.MockitoAnnotations
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+// Handler/Looper are Android framework classes; they need a Robolectric runtime.
+@RunWith(RobolectricTestRunner::class)
 class SdkRuntimeTest {
     @Mock
     private lateinit var mockChannel: MethodChannel
@@ -53,12 +57,14 @@ class SdkRuntimeTest {
         
         val testData = mapOf("click_id" to "test_123")
         SdkRuntime.postToFlutter(mockChannel, "onDeepLink", testData)
-        
-        // Wait for handler to process
-        Thread.sleep(200)
-        
+
+        // postToFlutter hands the call to the main Handler. Robolectric's main
+        // looper is PAUSED by default, so sleeping never drains it - the queued
+        // runnable has to be idled explicitly.
+        org.robolectric.Shadows.shadowOf(Looper.getMainLooper()).idle()
+
         // Verify method was called
-        verify(mockChannel, timeout(500)).invokeMethod("onDeepLink", testData)
+        verify(mockChannel).invokeMethod("onDeepLink", testData)
     }
 
     @Test

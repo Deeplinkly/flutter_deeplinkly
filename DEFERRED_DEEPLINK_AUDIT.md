@@ -1,5 +1,25 @@
 # Deferred Deep Link Audit - Device Compatibility Issues
 
+> ## ⚠️ Historical document
+>
+> This is a point-in-time **Android** audit that predates the 1.8.0 rework. It is
+> kept as a record of the reasoning behind that work — it is **not** a
+> description of current behaviour, and the code snippets quoted below no longer
+> match the files they cite.
+>
+> Since it was written, the structural remedies it recommends have landed:
+> `core/SdkRuntime.kt` (readiness gating), `queue/DeepLinkQueue.kt` and
+> `queue/QueueProcessor.kt` (persistence across process death), and
+> `resolveClickWithRetry(maxRetries = 2)` (retry with backoff). Individual items
+> below have **not** been re-verified one by one against the current code.
+>
+> It also predates iOS support entirely — iOS has no Install Referrer API and
+> nothing here applies to it. For how deferred linking works on iOS, see
+> [`docs/FLUTTER_SDK.md`](docs/FLUTTER_SDK.md#deferred-deep-linking-on-ios).
+>
+> **For current behaviour, read [`docs/FLUTTER_SDK.md`](docs/FLUTTER_SDK.md) and
+> [`CHANGELOG.md`](CHANGELOG.md), not this file.**
+
 ## Executive Summary
 
 After auditing the Flutter plugin code, I've identified **8 critical issues** that can cause deferred deep links to fail on certain devices/models. The main problems are related to **timing**, **device-specific Install Referrer API behavior**, and **lack of retry mechanisms**.

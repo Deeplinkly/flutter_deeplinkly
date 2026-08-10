@@ -2,40 +2,72 @@ import Foundation
 import Security
 
 enum Keychain {
+    /// Scopes our items so the account name alone is not the whole key.
+    private static let service = "com.deeplinkly.sdk"
+
+    /// The install id must survive a launch that happens before the user has
+    /// unlocked the device (background fetch, push-triggered launch). The
+    /// default protection class is `WhenUnlocked`, under which such a read
+    /// fails and `DeviceIdManager` mints a *new* id — silently splitting one
+    /// user's attribution across two identities.
+    private static let accessible = kSecAttrAccessibleAfterFirstUnlock
+
+    private static func baseQuery(for key: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+        ]
+    }
+
     @discardableResult
     static func set(_ value: String, for key: String) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
 
         // Delete any existing item
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key
-        ]
-        SecItemDelete(query as CFDictionary)
+        SecItemDelete(baseQuery(for: key) as CFDictionary)
 
         // Add new item
-        let attributes: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecValueData as String: data
-        ]
+        var attributes = baseQuery(for: key)
+        attributes[kSecValueData as String] = data
+        attributes[kSecAttrAccessible as String] = accessible
+
         let status = SecItemAdd(attributes as CFDictionary, nil)
         return status == errSecSuccess
     }
 
     static func get(_ key: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
+        var query = baseQuery(for: key)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
 
         var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        var status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        if status == errSecItemNotFound {
+            // Items written before kSecAttrService was introduced are keyed by
+            // account alone. Find them, then migrate so the fallback is a
+            // one-time cost rather than a permanent second lookup.
+            var legacyQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccount as String: key,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne,
+            ]
+            legacyQuery[kSecAttrService as String] = nil
+            status = SecItemCopyMatching(legacyQuery as CFDictionary, &result)
+            if status == errSecSuccess, let data = result as? Data,
+                let string = String(data: data, encoding: .utf8)
+            {
+                _ = set(string, for: key)
+                return string
+            }
+            return nil
+        }
+
         guard status == errSecSuccess,
-              let data = result as? Data,
-              let string = String(data: data, encoding: .utf8)
+            let data = result as? Data,
+            let string = String(data: data, encoding: .utf8)
         else { return nil }
 
         return string
@@ -43,11 +75,7 @@ enum Keychain {
 
     @discardableResult
     static func delete(_ key: String) -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key
-        ]
-        let status = SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(baseQuery(for: key) as CFDictionary)
         return status == errSecSuccess
     }
 }

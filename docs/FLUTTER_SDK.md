@@ -6,7 +6,7 @@ This page documents Deeplinkly's Flutter SDK integration flow and runtime API.
 
 ```yaml
 dependencies:
-  flutter_deeplinkly: ^1.7.0
+  flutter_deeplinkly: ^1.8.0
 ```
 
 ```bash
@@ -29,7 +29,7 @@ In `android/app/src/main/AndroidManifest.xml`:
 
 <application ...>
   <meta-data
-      android:name="DEEPLINKLY_API_KEY"
+      android:name="com.deeplinkly.sdk.api_key"
       android:value="your_api_key_here" />
 </application>
 ```
@@ -49,9 +49,58 @@ In `ios/Runner/Info.plist`:
   </dict>
 </array>
 
-<key>DEEPLINKLY_API_KEY</key>
+<key>DeeplinklyApiKey</key>
 <string>your_api_key_here</string>
+
+<!-- Hosts the SDK will accept a deferred deep link from. Subdomains count. -->
+<key>DeeplinklyLinkDomains</key>
+<array>
+  <string>yourbrand.deeplinkly.com</string>
+</array>
 ```
+
+Then add an **Associated Domains** capability with `applinks:yourbrand.deeplinkly.com`
+for each link domain. The plugin registers for the `UIApplicationDelegate` and
+`UIScene` link callbacks itself, so no AppDelegate changes are required.
+
+### Deferred deep linking on iOS
+
+iOS has no install-referrer API, so the link survives an App Store install via
+the pasteboard: the Deeplinkly interstitial copies the link when the visitor
+taps through to the store, and the SDK reads it back once, on first launch.
+
+Consequences worth knowing:
+
+- The visitor must **tap through** the interstitial — there is no auto-redirect
+  on iOS. Safari does not allow a clipboard write without a user gesture, so a
+  timed redirect could never carry one.
+- iOS shows its standard "Pasted from Safari" banner on that one read. The SDK
+  probes the pasteboard's *metadata* first — `detectPatterns(.probableWebURL)`
+  on iOS 16+, `hasStrings` below that — which is banner-free, so the banner
+  only appears when there is plausibly a URL to read.
+- The read happens once per install, guarded by a persisted flag. It is skipped
+  entirely when tracking is disabled via `setTrackingEnabled(false)`.
+- Only URLs matching `DeeplinklyLinkDomains` are read and resolved; anything
+  else on the pasteboard is ignored and left untouched. Your own link is cleared
+  from the pasteboard, but only after the resolve has been durably queued.
+- The resolved click is stamped `attribution_source = "clipboard"`, not
+  `install_referrer` — that API does not exist on iOS.
+- If the first launch is offline the pending resolve is persisted and retried on
+  the next launch, so an offline install is not lost.
+
+The SDK does **not** do probabilistic ("fingerprint") matching on iOS. Apple's
+Developer Program License Agreement and App Review Guideline 5.1.2 prohibit
+deriving a device identifier from device signals. The trade-off: a visitor who
+does not tap through the interstitial has no deferred attribution.
+
+### Privacy manifest
+
+The SDK ships `PrivacyInfo.xcprivacy` in its resource bundle, so you do not need
+to declare its API usage yourself. `NSPrivacyTracking` is `false`; the SDK links
+neither `AppTrackingTransparency` nor `AdSupport` and never reads the IDFA, so
+it triggers **no ATT prompt** and needs no `NSUserTrackingUsageDescription`.
+Declared required-reason APIs are `UserDefaults` (`CA92.1`) and system boot time
+(`35F9.1`).
 
 ## Initialize
 
@@ -66,10 +115,25 @@ void main() {
 ## Handle deep links
 
 ```dart
-FlutterDeeplinkly.instance.deepLinkStream.listen((params) {
-  debugPrint("Deep link payload: $params");
+FlutterDeeplinkly.instance.deepLinkStream.listen((payload) {
+  final params = payload['params'] as Map? ?? {};
+  debugPrint("Deep link ${payload['click_id']} -> $params");
 });
 ```
+
+Every deep link arrives in the same envelope on both platforms:
+
+```dart
+{
+  'click_id': 'ab12…',            // null if the backend did not recognise the click
+  'params': {'screen': 'home'},   // the link's own parameters
+  'probability': 0.92,            // deferred-match confidence, when the backend sends it
+}
+```
+
+`params` carries the link's parameters whether they came back from the backend
+or, when it could not be reached, from the URL itself - so a single read path
+covers both.
 
 ## Use attribution and identity APIs
 
@@ -95,9 +159,15 @@ await FlutterDeeplinkly.logEvent(
 Validation constraints:
 
 - Event name max length: 64
-- Max custom params: 25
+- Max custom params: 25 (the SDK's own `_dl_*` keys do not count towards this,
+  and passing a key with that prefix is rejected)
 - Param key max length: 64
 - Param string value max length: 256
+- `List`/`Map` values are stored as compact JSON; the 256 limit applies to that
+  encoded form
+
+`num` and `bool` values keep their JSON types end to end — `49.99` is stored as a
+number, not `"49.99"`.
 
 ## Generate Deeplinkly links
 
@@ -111,6 +181,7 @@ final result = await FlutterDeeplinkly.generateLink(
   options: const DeeplinklyLinkOptions(
     channel: "email",
     feature: "upgrade_campaign",
+    tags: ["spring", "sale"],
   ),
 );
 ```

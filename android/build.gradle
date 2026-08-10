@@ -61,8 +61,14 @@ android {
     }
 
     testOptions {
+        // Robolectric resolves resources/SharedPreferences for the tests that
+        // need a real Context via ApplicationProvider.
+        unitTests.includeAndroidResources = true
+
         unitTests.all {
-            useJUnitPlatform()
+            // The suite is JUnit 4 (org.junit.Test / org.junit.Assert), so the
+            // JUnit Platform runner would collect nothing.
+            useJUnit()
 
             testLogging {
                events "passed", "skipped", "failed", "standardOut", "standardError"
@@ -76,6 +82,9 @@ android {
 dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.17.0")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("org.robolectric:robolectric:4.14.1")
     implementation 'com.android.installreferrer:installreferrer:2.2'
     implementation 'com.google.android.gms:play-services-ads-identifier:18.2.0'
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"

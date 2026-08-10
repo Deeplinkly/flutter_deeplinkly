@@ -73,7 +73,14 @@ enum RetryQueue {
 
                 remove(s)
             } catch {
-                Logger.e("RetryQueue retry failed", error)
+                // A rejected payload never becomes valid, so keeping it means
+                // replaying it on every launch for the life of the install.
+                if NetworkUtils.isTerminal(error) {
+                    Logger.w("RetryQueue: dropping item after terminal response")
+                    remove(s)
+                } else {
+                    Logger.e("RetryQueue retry failed", error)
+                }
             }
         }
     }

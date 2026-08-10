@@ -5,6 +5,7 @@ import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
 import com.deeplinkly.flutter_deeplinkly.network.DeeplinklyNetwork
+import com.deeplinkly.flutter_deeplinkly.network.isTerminalHttp
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
 import com.deeplinkly.flutter_deeplinkly.attribution.EnrichmentSender
 import io.flutter.plugin.common.MethodChannel
@@ -77,14 +78,21 @@ object QueueProcessor {
         Logger.d("Processing ${queue.size} pending resolves")
         
         queue.forEach { pending ->
+            // Exhausted and backing-off are different states. The previous guard
+            // conflated them: once the backoff window elapsed, getNextRetryDelay
+            // decayed to 0 and an item that had already burned its budget fell
+            // through and was retried anyway.
+            if (DeepLinkQueue.isExhausted(pending)) {
+                Logger.w("Dropping resolve after max attempts: clickId=${pending.clickId}, code=${pending.code}")
+                DeepLinkQueue.removeResolve(pending)
+                return@forEach
+            }
             if (!DeepLinkQueue.shouldRetry(pending)) {
                 val delay = DeepLinkQueue.getNextRetryDelay(pending)
-                if (delay > 0) {
-                    Logger.d("Skipping resolve (waiting ${delay}ms): clickId=${pending.clickId}, code=${pending.code}")
-                    return@forEach
-                }
+                Logger.d("Skipping resolve (waiting ${delay}ms): clickId=${pending.clickId}, code=${pending.code}")
+                return@forEach
             }
-            
+
             try {
                 val resolveUrl = if (pending.clickId != null) {
                     "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=${pending.clickId}"
@@ -99,6 +107,16 @@ object QueueProcessor {
                 Logger.d("Resolving: $resolveUrl (attempt ${pending.attemptCount + 1})")
                 
                 val (_, json) = DeeplinklyNetwork.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 3)
+
+                // An unknown click id comes back 200 with stale: true. Retrying
+                // it would keep the item in the queue until it exhausted its
+                // budget and then deliver a link the backend has disowned.
+                if (DeeplinklyNetwork.isStale(json)) {
+                    Logger.w("Queued resolve returned a stale click; dropping: clickId=${pending.clickId}")
+                    DeepLinkQueue.removeResolve(pending)
+                    return@forEach
+                }
+
                 val resolvedData = DeeplinklyNetwork.extractParamsFromJson(json, pending.clickId)
                 
                 // Merge enrichment data
@@ -106,17 +124,8 @@ object QueueProcessor {
                 (resolvedData["click_id"] as? String)?.let { enrichmentData["click_id"] = it }
                 
                 // Save attribution
-                val normalized = linkedMapOf<String, String?>(
-                    "source" to "deep_link",
-                    "click_id" to ((resolvedData["click_id"] as? String) ?: pending.clickId),
-                    "utm_source" to (resolvedData["utm_source"] as? String),
-                    "utm_medium" to (resolvedData["utm_medium"] as? String),
-                    "utm_campaign" to (resolvedData["utm_campaign"] as? String),
-                    "utm_term" to (resolvedData["utm_term"] as? String),
-                    "utm_content" to (resolvedData["utm_content"] as? String),
-                    "gclid" to (resolvedData["gclid"] as? String),
-                    "fbclid" to (resolvedData["fbclid"] as? String),
-                    "ttclid" to (resolvedData["ttclid"] as? String)
+                val normalized = DeeplinklyNetwork.attributionSnapshot(
+                    resolvedData, source = "deep_link", fallbackClickId = pending.clickId
                 )
                 AttributionStore.saveOnce(normalized)
                 
@@ -155,22 +164,23 @@ object QueueProcessor {
                     lastAttemptTime = System.currentTimeMillis()
                 )
                 DeepLinkQueue.updateResolveAttempt(updated)
-                
+
+                // Give up immediately on a response the server will keep rejecting
+                // (revoked key, suspended account, unknown click) instead of
+                // spending the remaining attempts on it.
+                val terminal = e.isTerminalHttp()
+                if (terminal) {
+                    Logger.w("Resolve rejected (terminal), using fallback data: ${e.message}")
+                }
+
                 // If max retries reached, still queue for delivery with fallback data
-                if (updated.attemptCount >= 5) {
-                    Logger.w("Max retries reached, using fallback data")
-                    val fallbackData = linkedMapOf<String, Any?>(
-                        "click_id" to pending.clickId,
-                        "utm_source" to pending.localParams["utm_source"],
-                        "utm_medium" to pending.localParams["utm_medium"],
-                        "utm_campaign" to pending.localParams["utm_campaign"],
-                        "utm_term" to pending.localParams["utm_term"],
-                        "utm_content" to pending.localParams["utm_content"],
-                        "gclid" to pending.localParams["gclid"],
-                        "fbclid" to pending.localParams["fbclid"],
-                        "ttclid" to pending.localParams["ttclid"]
+                if (terminal || DeepLinkQueue.isExhausted(updated)) {
+                    if (!terminal) Logger.w("Max retries reached, using fallback data")
+                    // Same {click_id, params} envelope as a resolved link.
+                    val fallbackData = DeeplinklyNetwork.fallbackPayload(
+                        pending.clickId, pending.localParams
                     )
-                    
+
                     DeepLinkQueue.enqueueDelivery(
                         DeepLinkQueue.PendingDelivery(
                             resolvedData = fallbackData,
@@ -179,7 +189,11 @@ object QueueProcessor {
                         )
                     )
                     
-                    AttributionStore.saveOnce(fallbackData.mapValues { it.value as? String })
+                    AttributionStore.saveOnce(
+                        DeeplinklyNetwork.attributionSnapshot(
+                            fallbackData, source = "deep_link", fallbackClickId = pending.clickId
+                        )
+                    )
                     DeepLinkQueue.removeResolve(updated)
                 }
             }

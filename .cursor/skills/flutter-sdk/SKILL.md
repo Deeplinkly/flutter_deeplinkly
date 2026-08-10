@@ -40,13 +40,38 @@ Ask user only for values not inferable from project files (API key, domain/schem
    - input: raw map
    - output: `{ target, params, source, fallback }`
 5. Route safely using centralized resolver (idempotent, no duplicate navigations).
-6. Add Android intent filter + `DEEPLINKLY_API_KEY` metadata.
-7. Add iOS URL scheme + `DEEPLINKLY_API_KEY` in `Info.plist`.
+6. Add Android intent filter + `com.deeplinkly.sdk.api_key` `<meta-data>`.
+7. iOS setup (all four, none optional — see the platform-key contract below):
+   - `DeeplinklyApiKey` in `Info.plist`
+   - `DeeplinklyLinkDomains` array in `Info.plist`, one entry per link domain
+   - **Associated Domains** capability with `applinks:<host>` per domain, and
+     `CODE_SIGN_ENTITLEMENTS` actually pointing at the entitlements file
+   - `CFBundleURLTypes` only if the project uses a custom scheme
 8. Add identity bind call `setUserId()` post-login.
 9. Add attribution pull via `getInstallAttribution()` and pass to analytics context.
 10. Add event wrapper around `logEvent()` with pre-validation.
 11. Add link creation helper via `generateLink()`.
 12. Add optional debug logging toggle for non-production builds.
+
+## Step 2b: Platform key contract
+
+These names are exact and are a frequent source of silent failure. Do not
+normalize them to look consistent with each other — they are genuinely
+different on each platform.
+
+| Purpose | Android | iOS |
+|---|---|---|
+| API key | `com.deeplinkly.sdk.api_key` (`<meta-data>`) | `DeeplinklyApiKey` (`Info.plist`) |
+| Link domain allowlist | n/a (uses intent filters) | `DeeplinklyLinkDomains` (`Info.plist`, array) |
+| Deferred mechanism | Play Install Referrer | Pasteboard, first launch only |
+
+Never write `DEEPLINKLY_API_KEY`. It is read by neither platform; docs
+carried it in error until 1.8.0.
+
+Do **not** add `AppDelegate.swift` link-forwarding code. The plugin registers
+for both the `UIApplicationDelegate` and `UIScene` callbacks itself, and hand
+-wiring `handleUniversalLink` on top of that delivers the link twice. If the
+project already has such code from an older integration, remove it.
 
 ## Step 3: API behavior contract
 
@@ -82,6 +107,15 @@ Run and record these checks:
   - inspect normalizer mapping and default route selection
 - **Deferred attribution empty**:
   - check retrieval timing and first-launch lifecycle order
+  - **iOS**: confirm the link host is listed in `DeeplinklyLinkDomains`; an
+    unlisted custom domain is ignored by design
+  - **iOS**: the deferred read is once-per-install and the pasteboard is
+    cleared after it. Reinstall to retest — relaunching will not repeat it
+  - **iOS**: cannot be tested on the Simulator (no App Store). Use a device
+  - **iOS**: the interstitial requires a tap; there is no auto-redirect,
+    because Safari will not write the clipboard without a user gesture
+  - **Android**: Install Referrer is unavailable on sideloaded builds; test
+    through Play internal testing
 - **Events fail**:
   - enforce constraints (`name <= 64`, `params <= 25`, key/value limits)
 - **Duplicate opens on resume**:
@@ -94,6 +128,14 @@ Run and record these checks:
 - Keep all deeplink handling null-safe and exception-safe.
 - Prefer deterministic fallbacks over hard failures.
 - Keep changes minimal and compatible with existing app architecture.
+- Do not add `AppTrackingTransparency`, `AdSupport`, IDFA reads, or an
+  `NSUserTrackingUsageDescription` on Deeplinkly's behalf. The SDK declares
+  `NSPrivacyTracking = false` and ships its own `PrivacyInfo.xcprivacy`;
+  adding those frameworks makes that declaration false and invites an App
+  Review rejection.
+- Do not implement device-signal fingerprint matching on iOS. It is
+  prohibited by App Review Guideline 5.1.2 and the Apple Developer Program
+  License Agreement.
 
 ## Done criteria
 

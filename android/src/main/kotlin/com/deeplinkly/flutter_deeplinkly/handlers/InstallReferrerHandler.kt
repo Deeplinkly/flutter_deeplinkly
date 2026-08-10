@@ -112,8 +112,19 @@ object InstallReferrerHandler {
                                         maxRetries = 2,
                                         initialDelayMs = 50
                                     )
+                                    // An unknown click id comes back 200 with
+                                    // stale: true. The referrer is read once per
+                                    // install, so mark it handled rather than
+                                    // re-resolving an id the backend disowns.
+                                    if (DeeplinklyNetwork.isStale(json)) {
+                                        Logger.w("Install referrer resolve returned a stale click; suppressing delivery.")
+                                        prefs.edit().putBoolean(KEY_REFERRER_HANDLED, true).apply()
+                                        DeepLinkQueue.removeResolve(pendingResolve)
+                                        return@ioLaunch
+                                    }
+
                                     val dartMap = DeeplinklyNetwork.extractParamsFromJson(json, clickId)
-                                    
+
                                     // Update enrichment with resolved click_id
                                     (dartMap["click_id"] as? String)?.let { enrichmentData["click_id"] = it }
                                     

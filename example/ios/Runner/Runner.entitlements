@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Universal Links. One applinks: entry per Deeplinkly link domain.
+	  iOS fetches https://<domain>/.well-known/apple-app-site-association to
+	  verify the association, which Deeplinkly serves for a verified domain.
+
+	  This file is not wired into the Xcode target by default — add it under
+	  Signing & Capabilities ▸ Associated Domains, or set
+	  CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements on the Runner target.
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:example.deeplinkly.com</string>
+	</array>
+</dict>
+</plist>

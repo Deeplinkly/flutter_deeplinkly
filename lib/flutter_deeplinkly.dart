@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_deeplinkly/models/deeplinkly.dart';
@@ -26,6 +27,10 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
   static const int _maxEventParamsCount = 25;
   static const int _maxEventParamKeyLength = 64;
   static const int _maxEventParamValueLength = 256;
+
+  /// Namespace the native layers use for the metadata they attach to every
+  /// event (sequence number, client clocks, timezone offset).
+  static const String _reservedParamPrefix = '_dl_';
 
   static final FlutterDeeplinkly _instance = FlutterDeeplinkly._internal();
   factory FlutterDeeplinkly() => _instance;
@@ -170,15 +175,28 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
       if (key.isEmpty || key.length > _maxEventParamKeyLength) {
         return false;
       }
-      final value = entry.value;
-      if (value is String && value.length > _maxEventParamValueLength) {
+      // The native layers add their own bookkeeping keys under this prefix, and
+      // the backend excludes them from the parameter budget. Letting a caller
+      // use it would collide with those.
+      if (key.startsWith(_reservedParamPrefix)) {
         return false;
       }
-      if (value is! String &&
-          value is! num &&
-          value is! bool &&
-          value is! List &&
-          value is! Map) {
+      final value = entry.value;
+      if (value is String) {
+        if (value.length > _maxEventParamValueLength) {
+          return false;
+        }
+      } else if (value is List || value is Map) {
+        // Containers are stored as compact JSON text, so it is the encoded
+        // length the backend measures - and truncates.
+        try {
+          if (jsonEncode(value).length > _maxEventParamValueLength) {
+            return false;
+          }
+        } catch (_) {
+          return false; // not JSON-encodable
+        }
+      } else if (value is! num && value is! bool) {
         return false;
       }
     }

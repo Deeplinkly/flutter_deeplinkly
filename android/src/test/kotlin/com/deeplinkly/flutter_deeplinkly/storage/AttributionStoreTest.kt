@@ -7,15 +7,21 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Test
 import org.junit.Assert.*
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+@RunWith(RobolectricTestRunner::class)
 class AttributionStoreTest {
     private lateinit var context: Context
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        // Prefs.of() reads through DeeplinklyContext.app, which the plugin
+        // normally populates in onAttachedToEngine.
+        com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext.app = context
         // Clear any existing attribution
         val prefs = Prefs.of()
         prefs.edit().remove("initial_attribution").apply()

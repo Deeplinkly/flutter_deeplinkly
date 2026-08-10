@@ -13,9 +13,12 @@ import org.junit.Assert.*
 import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.MockitoAnnotations
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+@RunWith(RobolectricTestRunner::class)
 class InstallReferrerHandlerTest {
     @Mock
     private lateinit var mockChannel: MethodChannel
@@ -30,7 +33,10 @@ class InstallReferrerHandlerTest {
     fun setUp() {
         MockitoAnnotations.openMocks(this)
         context = ApplicationProvider.getApplicationContext()
-        
+        // Prefs.of() reads through DeeplinklyContext.app, which the plugin
+        // normally populates in onAttachedToEngine.
+        com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext.app = context
+
         // Initialize SdkRuntime
         SdkRuntime.ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         SdkRuntime.mainHandler = android.os.Handler(android.os.Looper.getMainLooper())

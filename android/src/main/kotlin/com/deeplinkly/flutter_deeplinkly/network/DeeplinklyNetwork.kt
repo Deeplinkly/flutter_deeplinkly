@@ -7,11 +7,58 @@ import com.deeplinkly.flutter_deeplinkly.privacy.TrackingPreferences
 import com.deeplinkly.flutter_deeplinkly.retry.SdkRetryQueue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+
+/**
+ * A non-2xx response, carrying the status so callers can tell a transient
+ * failure from one that will never succeed.
+ */
+class DeeplinklyHttpException(
+    val statusCode: Int,
+    val body: String
+) : Exception("HTTP $statusCode: $body") {
+    /**
+     * A 4xx will not start succeeding on retry - the API key is invalid, the
+     * account is suspended, or the payload is malformed. 408 and 429 are the
+     * exceptions: both are transient and worth backing off on.
+     */
+    val isTerminal: Boolean
+        get() = statusCode in 400..499 && statusCode != 408 && statusCode != 429
+}
+
+/** True when [this] is a response the server will keep rejecting. */
+internal fun Throwable.isTerminalHttp(): Boolean =
+    (this as? DeeplinklyHttpException)?.isTerminal == true
+
+/**
+ * Converts a parsed JSON object into plain Kotlin values.
+ *
+ * The method-channel codec only understands Kotlin/Java types, so a JSONObject
+ * left anywhere inside an `onDeepLink` payload makes the whole call
+ * unencodable - which is how a deep link that had been through the delivery
+ * queue could be dropped while the same link delivered directly went through.
+ * JSONObject.NULL has to become a real null for the same reason.
+ */
+internal fun JSONObject.toValueMap(): Map<String, Any?> {
+    val map = mutableMapOf<String, Any?>()
+    keys().forEach { key -> map[key] = unwrapJsonValue(opt(key)) }
+    return map
+}
+
+internal fun JSONArray.toValueList(): List<Any?> =
+    (0 until length()).map { index -> unwrapJsonValue(opt(index)) }
+
+private fun unwrapJsonValue(value: Any?): Any? = when (value) {
+    JSONObject.NULL, null -> null
+    is JSONObject -> value.toValueMap()
+    is JSONArray -> value.toValueList()
+    else -> value
+}
 
 /**
  * Single consolidated Android networking layer.
@@ -22,21 +69,68 @@ object DeeplinklyNetwork {
     /** Backend /log-event returns 200 for accepted payloads; treat full 2xx as success. */
     private fun isHttpSuccess(code: Int) = code in 200..299
 
-    private fun JSONObject.toMap(): Map<String, Any?> {
-        val map = mutableMapOf<String, Any?>()
-        keys().forEach { key ->
-            var value = this[key]
-            if (value is JSONObject) value = value.toMap()
-            map[key] = value
+    /** optString() answers the literal string "null" for a JSON null on Android. */
+    private fun JSONObject.optStringOrNull(key: String): String? =
+        if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
+
+    /**
+     * Recursively converts a Kotlin map to a JSONObject.
+     *
+     * The JSONObject(Map) constructor leans on JSONObject.wrap() to handle nested
+     * collections, which is not guaranteed across every org.json implementation the
+     * SDK can run against. Converting explicitly keeps nested maps and lists as real
+     * JSON structures instead of their Java toString() form ("{sku=A1}"), which the
+     * backend would then store as an opaque string.
+     */
+    internal fun toJsonObject(map: Map<*, *>): JSONObject {
+        val out = JSONObject()
+        map.forEach { (k, v) -> out.put(k.toString(), toJsonValue(v)) }
+        return out
+    }
+
+    private fun toJsonValue(value: Any?): Any = when (value) {
+        null -> JSONObject.NULL
+        is Map<*, *> -> toJsonObject(value)
+        is Iterable<*> -> JSONArray().also { arr -> value.forEach { arr.put(toJsonValue(it)) } }
+        is Array<*> -> JSONArray().also { arr -> value.forEach { arr.put(toJsonValue(it)) } }
+        is String, is Number, is Boolean -> value
+        else -> value.toString()
+    }
+
+    /**
+     * Normalizes /generate-url into the shape DeeplinklyResult expects.
+     *
+     * The backend's success body is `{"success": true, "url": ...}`, but older
+     * deployments answer with a bare `{"url": ...}`. Returning the raw body meant
+     * `DeeplinklyResult.success` read null and reported failure alongside a
+     * perfectly good URL, so the flag is derived here rather than trusted.
+     */
+    internal fun generateLinkResult(response: JSONObject): Map<String, Any?> {
+        val status = response.optInt("_status_code", 0)
+        val url = response.optString("url", "").takeIf { it.isNotBlank() }
+
+        if (!isHttpSuccess(status)) {
+            val code = response.optString("code", "").takeIf { it.isNotBlank() } ?: "HTTP_$status"
+            val message = listOf("message", "error", "error_message")
+                .firstNotNullOfOrNull { response.optString(it, "").takeIf { m -> m.isNotBlank() } }
+                ?: "Link generation failed (HTTP $status)"
+            return mapOf("success" to false, "error_code" to code, "error_message" to message)
         }
-        return map
+
+        if (url == null) {
+            return mapOf(
+                "success" to false,
+                "error_code" to "NO_URL",
+                "error_message" to "No 'url' field in response"
+            )
+        }
+
+        return mapOf("success" to true, "url" to url)
     }
 
     fun generateLink(payload: Map<String, Any?>, apiKey: String): Map<String, Any?> {
-        val response = doPost(DomainConfig.GENERATE_LINK_ENDPOINT, JSONObject(payload).toString(), apiKey)
-        val responseMap = response.toMap().toMutableMap()
-        responseMap.remove("_status_code")
-        return responseMap
+        val response = doPost(DomainConfig.GENERATE_LINK_ENDPOINT, toJsonObject(payload).toString(), apiKey)
+        return generateLinkResult(response)
     }
 
     fun resolveClick(url: String, apiKey: String): Pair<String, JSONObject> {
@@ -44,11 +138,13 @@ object DeeplinklyNetwork {
             setRequestProperty("Accept", "application/json")
         }
         val responseCode = conn.responseCode
-        val responseBody = if (responseCode == 200) {
+        // Any 2xx is a success; the endpoint answers 200 today but pinning the
+        // check to exactly 200 made every other success a thrown exception.
+        val responseBody = if (isHttpSuccess(responseCode)) {
             conn.inputStream.bufferedReader().readText()
         } else {
-            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "HTTP $responseCode"
-            throw Exception("HTTP $responseCode: $errorBody")
+            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: ""
+            throw DeeplinklyHttpException(responseCode, errorBody)
         }
         return responseBody to JSONObject(responseBody)
     }
@@ -67,6 +163,9 @@ object DeeplinklyNetwork {
                 return@withContext resolveClick(url, apiKey)
             } catch (e: Exception) {
                 lastException = e
+                // Burning the remaining attempts on a 401/402/403 just multiplies
+                // the requests a suspended or revoked tenant sends.
+                if (e.isTerminalHttp()) throw e
                 if (attempt < maxRetries - 1) {
                     kotlinx.coroutines.delay(delayMs)
                     Logger.w("Resolve click retry ${attempt + 1}/$maxRetries after ${delayMs}ms")
@@ -78,16 +177,87 @@ object DeeplinklyNetwork {
         throw lastException ?: Exception("Failed to resolve click after $maxRetries attempts")
     }
 
+    /**
+     * True when the backend did not recognise the click id we asked about.
+     *
+     * /resolve answers an unknown click_id with HTTP 200 and
+     * `{"click_id": null, "params": {}, "stale": true}` rather than a 404, so
+     * the flag is the only signal that nothing was actually resolved.
+     */
+    fun isStale(json: JSONObject): Boolean = json.optBoolean("stale", false)
+
     fun extractParamsFromJson(json: JSONObject, clickId: String?): HashMap<String, Any?> {
         val params = json.optJSONObject("params")
         val out = hashMapOf<String, Any?>()
-        out["click_id"] = clickId ?: json.optString("click_id", null)
+        // Falling back to the *requested* click id would report a stale click as
+        // a live one, so on a stale response the id has to come from the body
+        // (where it is null) and never from what we asked for.
+        val bodyClickId = json.optStringOrNull("click_id")
+        out["click_id"] = if (isStale(json)) bodyClickId else (clickId ?: bodyClickId)
 
         if (params != null) {
-            out["params"] = params.toMap()
+            out["params"] = params.toValueMap()
         }
         if (!json.isNull("probability")) {
             out["probability"] = json.optDouble("probability", -1.0).takeIf { it >= 0 }
+        }
+        return out
+    }
+
+    /**
+     * The payload delivered when /resolve never answered.
+     *
+     * Dart reads a deep link's values off `params` (see [extractParamsFromJson]),
+     * so the flat map of query parameters the fallback paths used to send was
+     * invisible to any app written against a resolved link - the link arrived
+     * carrying nothing the app knew how to read. Fallbacks now keep the same
+     * `{click_id, params}` envelope, leaving Dart one shape to handle whether or
+     * not the backend answered.
+     */
+    fun fallbackPayload(
+        clickId: String?,
+        localParams: Map<String, String?>
+    ): HashMap<String, Any?> = hashMapOf(
+        "click_id" to clickId,
+        // click_id is the envelope's own key; repeating it inside params would
+        // have Dart read the same value from two places.
+        "params" to localParams.filterKeys { it != "click_id" }.filterValues { it != null }
+    )
+
+    /** Attribution keys the backend surfaces inside the resolve response's "params". */
+    private val ATTRIBUTION_KEYS = listOf(
+        "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+        "gclid", "fbclid", "ttclid"
+    )
+
+    /**
+     * Builds the normalized attribution snapshot persisted by AttributionStore.
+     *
+     * The backend nests UTM and ad-click params inside "params" (click-time values
+     * merged over the link's own metadata) - see _click_attribution_params in
+     * links/views.py. Reading them off the top level of the map returned by
+     * [extractParamsFromJson] always yielded null, so every snapshot taken on the
+     * deep-link path carried nothing but a source and a click_id. Every caller goes
+     * through here so that nesting is unwrapped in exactly one place.
+     */
+    fun attributionSnapshot(
+        resolved: Map<String, Any?>,
+        source: String,
+        fallbackClickId: String? = null
+    ): LinkedHashMap<String, String?> {
+        val params = resolved["params"] as? Map<*, *>
+        val out = linkedMapOf<String, String?>(
+            "source" to source,
+            "click_id" to ((resolved["click_id"] as? String) ?: fallbackClickId)
+        )
+        ATTRIBUTION_KEYS.forEach { key ->
+            // params values arrive from JSON, so they are not necessarily Strings.
+            val raw = params?.get(key)
+            out[key] = if (raw == null || raw == JSONObject.NULL) {
+                null
+            } else {
+                raw.toString().takeIf { it.isNotBlank() }
+            }
         }
         return out
     }
@@ -108,11 +278,11 @@ object DeeplinklyNetwork {
         }
         conn.outputStream.use { it.write(body.toString().toByteArray(StandardCharsets.UTF_8)) }
         val responseCode = conn.responseCode
-        val responseBody = if (responseCode in 200..299) {
+        val responseBody = if (isHttpSuccess(responseCode)) {
             conn.inputStream.bufferedReader().readText()
         } else {
-            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "HTTP $responseCode"
-            throw Exception("HTTP $responseCode: $errorBody")
+            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: ""
+            throw DeeplinklyHttpException(responseCode, errorBody)
         }
         return responseBody to JSONObject(responseBody)
     }
@@ -132,6 +302,7 @@ object DeeplinklyNetwork {
                 return@withContext resolveWithFingerprint(clickId, code, fingerprint, apiKey)
             } catch (e: Exception) {
                 lastException = e
+                if (e.isTerminalHttp()) throw e
                 if (attempt < maxRetries - 1) {
                     kotlinx.coroutines.delay(delayMs)
                     Logger.w("resolveWithFingerprint retry ${attempt + 1}/$maxRetries after ${delayMs}ms")
@@ -144,35 +315,38 @@ object DeeplinklyNetwork {
 
     fun sendEnrichment(data: Map<String, String?>, apiKey: String) {
         if (TrackingPreferences.isTrackingDisabled()) return
+        val payload = JSONObject(data.filterValues { it != null })
         try {
-            val json = JSONObject(data.filterValues { it != null })
-            doPost(DomainConfig.ENRICH_ENDPOINT, json.toString(), apiKey)
+            val response = doPost(DomainConfig.ENRICH_ENDPOINT, payload.toString(), apiKey)
+            val code = response.optInt("_status_code", 0)
+            // doPost reports non-2xx through the body rather than throwing, so the
+            // status has to be inspected here for the response to be retried at all.
+            if (!isHttpSuccess(code)) {
+                val failure = DeeplinklyHttpException(code, response.toString())
+                if (failure.isTerminal) {
+                    Logger.w("Enrichment rejected (HTTP $code), not queueing")
+                } else {
+                    Logger.e("Enrichment failed, queueing", failure)
+                    SdkRetryQueue.enqueue(payload, "enrichment")
+                }
+            }
         } catch (e: Exception) {
             Logger.e("Enrichment failed, queueing", e)
-            val payload = JSONObject(data.filterValues { it != null })
             SdkRetryQueue.enqueue(payload, "enrichment")
         }
     }
 
     fun logEvent(eventName: String, parameters: Map<String, Any?>, apiKey: String): Boolean {
         if (TrackingPreferences.isTrackingDisabled()) return false
+        val payload = JSONObject().apply {
+            put("event_name", eventName)
+            put("parameters", toJsonObject(parameters))
+        }
         return try {
-            val payload = JSONObject(
-                mapOf(
-                    "event_name" to eventName,
-                    "parameters" to JSONObject(parameters)
-                )
-            )
             val response = doPost(DomainConfig.LOG_EVENT_ENDPOINT, payload.toString(), apiKey)
             isHttpSuccess(response.optInt("_status_code", 0))
         } catch (e: Exception) {
             Logger.e("logEvent failed, queueing", e)
-            val payload = JSONObject(
-                mapOf(
-                    "event_name" to eventName,
-                    "parameters" to JSONObject(parameters)
-                )
-            )
             SdkRetryQueue.enqueue(payload, "event")
             false
         }
@@ -182,7 +356,7 @@ object DeeplinklyNetwork {
         val response = doPost(DomainConfig.LOG_EVENT_ENDPOINT, payload.toString(), apiKey)
         val code = response.optInt("_status_code", 0)
         if (!isHttpSuccess(code)) {
-            throw Exception("Non-2xx event response: $code")
+            throw DeeplinklyHttpException(code, response.toString())
         }
     }
 
@@ -190,7 +364,7 @@ object DeeplinklyNetwork {
         val response = doPost(DomainConfig.ENRICH_ENDPOINT, payload.toString(), apiKey)
         val code = response.optInt("_status_code", 0)
         if (!isHttpSuccess(code)) {
-            throw Exception("Non-2xx enrichment response: $code")
+            throw DeeplinklyHttpException(code, response.toString())
         }
     }
 
@@ -215,7 +389,7 @@ object DeeplinklyNetwork {
         val response = doPost(DomainConfig.ERROR_ENDPOINT, payload.toString(), apiKey)
         val code = response.optInt("_status_code", 0)
         if (!isHttpSuccess(code)) {
-            throw Exception("Non-2xx sdk-error response: $code")
+            throw DeeplinklyHttpException(code, response.toString())
         }
     }
 
