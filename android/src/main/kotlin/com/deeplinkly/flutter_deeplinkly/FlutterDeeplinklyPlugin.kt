@@ -23,6 +23,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.PluginRegistry
 import kotlinx.coroutines.*
 import android.os.Handler
 import android.os.Looper
@@ -31,8 +32,26 @@ import com.deeplinkly.flutter_deeplinkly.enrichment.StartupEnrichment
 class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
     private lateinit var channel: MethodChannel
     private var activity: Activity? = null
-    private lateinit var apiKey: String
+    private var activityBinding: ActivityPluginBinding? = null
+    // Not lateinit: reading the manifest can throw, and the catch below leaves the
+    // key unset. The coroutine error handler and every ioLaunch block capture it,
+    // so an unset lateinit turned any background failure into an
+    // UninitializedPropertyAccessException raised from the error handler itself.
+    private var apiKey: String = ""
     private var sdkEnabled = false
+
+    // Held as a single instance so it can be removed again. Registering a fresh
+    // lambda per attach leaks a listener per activity re-attach, and every extra
+    // listener re-delivers the same deep link.
+    private val newIntentListener = PluginRegistry.NewIntentListener { newIntent ->
+        Logger.d("onNewIntent received")
+        // Reads the current activity rather than one captured at registration
+        // time, which would go stale as soon as the activity was recreated.
+        activity?.let { act ->
+            DeepLinkHandler.handleIntent(act, newIntent, channel, apiKey)
+        } ?: Logger.w("Activity is null, dropping intent")
+        true
+    }
 
     private val coroutineErrorHandler = CoroutineExceptionHandler { _, e ->
         try {
@@ -196,44 +215,49 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         Logger.d("onAttachedToActivity")
+        attachActivity(binding, isConfigChange = false)
+    }
+
+    /**
+     * A configuration change hands back the *same* launch intent. Replaying the
+     * startup path here would resolve and deliver that deep link a second time -
+     * and fire attribution again with it - so only the listener is rewired.
+     */
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        Logger.d("onReattachedToActivityForConfigChanges")
+        attachActivity(binding, isConfigChange = true)
+    }
+
+    private fun attachActivity(binding: ActivityPluginBinding, isConfigChange: Boolean) {
         activity = binding.activity
         if (!sdkEnabled) {
             Logger.w("SDK disabled (missing API key). Skipping initialization.")
             return
         }
+
+        // Drop any listener from a previous attach before adding this one, so a
+        // re-attach cannot stack duplicates onto the binding.
+        activityBinding?.removeOnNewIntentListener(newIntentListener)
+        activityBinding = binding
+        binding.addOnNewIntentListener(newIntentListener)
+
+        if (isConfigChange) return
+
         val context = binding.activity.applicationContext
-        val currentActivity = activity // Capture to avoid null issues
         try {
             // Handle initial intent (safe null check)
-            currentActivity?.let { act ->
-                val intent = act.intent
-                if (intent != null && intent.data != null) {
-                    DeepLinkHandler.handleIntent(act, intent, channel, apiKey)
+            binding.activity.intent
+                ?.takeIf { it.data != null }
+                ?.let { intent ->
+                    DeepLinkHandler.handleIntent(binding.activity, intent, channel, apiKey)
                 }
-            }
 
-            // Register for new intents
-            binding.addOnNewIntentListener { newIntent ->
-                Logger.d("onNewIntent received")
-                currentActivity?.let { act ->
-                    DeepLinkHandler.handleIntent(act, newIntent, channel, apiKey)
-                } ?: run {
-                    // Activity is null, queue the intent for later
-                    Logger.w("Activity is null, queueing intent for later processing")
-                    // Intent will be processed when activity is available
-                }
-                true
-            }
-            
-            // Check install referrer (safe)
-            currentActivity?.let { act ->
-                InstallReferrerHandler.checkInstallReferrer(context, act, channel, apiKey)
-            }
-            
+            InstallReferrerHandler.checkInstallReferrer(context, binding.activity, channel, apiKey)
+
             ClipboardHandler.checkClipboard(channel, apiKey)
-            
+
             // Process retry queues
-            SdkRuntime.ioLaunch { 
+            SdkRuntime.ioLaunch {
                 SdkRetryQueue.retryAll(apiKey)
                 // Also process deep link queues
                 com.deeplinkly.flutter_deeplinkly.queue.QueueProcessor.startProcessing(channel, apiKey)
@@ -244,13 +268,18 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
         }
     }
 
-    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) = onAttachedToActivity(binding)
+    private fun detachActivity() {
+        activityBinding?.removeOnNewIntentListener(newIntentListener)
+        activityBinding = null
+        activity = null
+    }
+
     override fun onDetachedFromActivityForConfigChanges() {
-        Logger.d("onDetachedFromActivityForConfigChanges"); activity = null
+        Logger.d("onDetachedFromActivityForConfigChanges"); detachActivity()
     }
 
     override fun onDetachedFromActivity() {
-        Logger.d("onDetachedFromActivity"); activity = null
+        Logger.d("onDetachedFromActivity"); detachActivity()
     }
 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {

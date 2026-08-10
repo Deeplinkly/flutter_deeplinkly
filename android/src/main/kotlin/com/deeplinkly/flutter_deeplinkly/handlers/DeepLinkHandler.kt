@@ -91,15 +91,6 @@ object DeepLinkHandler {
                         throw e
                     }
 
-                    // Build a nullable String map from the JSON
-                    val serverParams: Map<String, String?> = buildMap {
-                        val keys = json.keys()
-                        while (keys.hasNext()) {
-                            val k = keys.next()
-                            put(k, json.optString(k, null))
-                        }
-                    }
-
                     val dartMap = DeeplinklyNetwork.extractParamsFromJson(json, clickId)
 
                     // Ensure enrichment has the click_id we actually resolved

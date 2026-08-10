@@ -95,16 +95,22 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _currentLifecycleState = state;
-    
-    // Notify native layer of lifecycle changes
-    try {
-      _channel.invokeMethod('onLifecycleChange', {
-        'state': state.toString().split('.').last, // e.g., 'resumed', 'paused'
-      });
-    } catch (e) {
-      // Silently handle error
-    }
-    
+
+    // Notify native layer of lifecycle changes.
+    //
+    // invokeMethod returns a Future, so a synchronous try/catch around it never
+    // sees a rejection - the error escaped as an unhandled async error instead.
+    // Hosts that funnel those into a crash reporter (Crashlytics via
+    // PlatformDispatcher.onError) recorded a fatal crash on every foreground or
+    // background transition. The rejection has to be caught on the Future.
+    unawaited(
+      _channel
+          .invokeMethod('onLifecycleChange', {
+            'state': state.name, // e.g., 'resumed', 'paused'
+          })
+          .catchError((Object _) => null),
+    );
+
     // Mark Flutter as ready when app resumes
     if (state == AppLifecycleState.resumed && !_isFlutterReady) {
       _markFlutterReady();
