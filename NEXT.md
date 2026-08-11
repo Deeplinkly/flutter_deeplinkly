@@ -89,7 +89,7 @@ Android has no use for (`checkPasteboardNow`, `willShowBanner`,
 `setCheckPasteboardOnInstall`, and `handle(itemProviders:)` for the paste
 control). Both are correct. Only the *shared* concepts need to line up.
 
-### Three gaps to close while doing it
+### Two gaps to close while doing it
 
 Each is an existing bug with no natural home today. The facade is the home, and
 Android already solved each one — port, don't redesign.
@@ -125,11 +125,11 @@ anything not `String`/number/`Bool`/`List`/`Map` is rejected.
 `UserDefaults.integer(forKey:) + 1`. Android does the read-modify-write under a
 lock and `commit()`s it. The counter belongs in the facade, not the bridge.
 
-**Gap 3 — `setTrackingEnabled` is documented but unreachable.**
-
-Listed in `README.md` and `docs/FLUTTER_SDK.md:223`, but it exists only on
-`MethodChannelFlutterDeeplinkly`, which is not exported. Either surface it on
-the public Dart API or cut the docs — decide, don't leave it half-shipped.
+~~**Gap 3 — `setTrackingEnabled` is documented but unreachable.**~~ **Done** —
+surfaced on `FlutterDeeplinkly` and the orphan on
+`MethodChannelFlutterDeeplinkly` removed. It was never a facade concern; it was
+a Dart export. `test/tracking_test.dart` pins the `enabled` → `disabled`
+inversion.
 
 ### How to verify
 

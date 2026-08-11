@@ -14,8 +14,4 @@ class MethodChannelFlutterDeeplinkly extends FlutterDeeplinklyPlatform {
     final version = await methodChannel.invokeMethod<String>('getPlatformVersion');
     return version;
   }
-
-  Future<void> setTrackingEnabled({bool enabled = true}) async {
-    await methodChannel.invokeMethod("disableTracking", {"disabled": !enabled});
-  }
 }

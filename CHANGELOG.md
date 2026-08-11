@@ -1,5 +1,12 @@
 ## Unreleased
 
+### Added
+
+- **`FlutterDeeplinkly.setTrackingEnabled(bool)`.** Documented since it shipped,
+  but it existed only on `MethodChannelFlutterDeeplinkly` and so was not
+  reachable from the public API. Both native sides already handled the
+  `disableTracking` call it makes; only the Dart entry point was missing.
+
 ### Changed
 
 - **Android: the SDK no longer depends on Flutter.** Everything below the

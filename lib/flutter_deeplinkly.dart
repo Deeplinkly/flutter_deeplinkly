@@ -274,6 +274,30 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
     }
   }
 
+  /// Turn all reporting off, or back on.
+  ///
+  /// The switch for a consent flow's "don't track me". While disabled the SDK
+  /// sends no enrichment, no events and no error reports, and skips the iOS
+  /// pasteboard read. Deep links still resolve and are still delivered to
+  /// [onResolved] — the link a user tapped keeps working.
+  ///
+  /// Persists across launches on both platforms. Enabled by default.
+  ///
+  /// Wins over [setAttributionLevel]: while disabled, [getAttributionLevel]
+  /// reports [DeeplinklyAttributionLevel.none] whatever level was set. Use
+  /// [setAttributionLevel] instead when you need a middle ground rather than
+  /// an off switch.
+  static Future<bool> setTrackingEnabled(bool enabled) async {
+    try {
+      final ok = await _channel.invokeMethod<bool>('disableTracking', {
+        'disabled': !enabled,
+      });
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Restrict how much the SDK may report about this device.
   ///
   /// Use this for consent flows that need a middle ground between "track" and

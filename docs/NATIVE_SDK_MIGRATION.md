@@ -165,7 +165,7 @@ manual click on central.sonatype.com because Central releases are immutable.
 
 Unit: **172 Kotlin tests** in `android_deeplinkly` (168 + 4 version guards),
 1 bridge test in `flutter_deeplinkly`, **395 Swift tests** in
-`example/ios/RunnerTests`, 11 Dart tests, `flutter analyze` clean.
+`example/ios/RunnerTests`, 15 Dart tests, `flutter analyze` clean.
 
 On device (Galaxy A33, Android 16), both the Flutter example and the native
 sample:
@@ -257,7 +257,7 @@ Ordered plan with specifics in **`NEXT.md`**. In short:
    The plugin currently reaches into 24 static entry points across 16 enums;
    extract as-is and that becomes the SDK's public API. Building the facade
    first keeps everything else `internal`, so the extraction is a file move
-   rather than a mass visibility edit. It also houses three existing bugs that
+   rather than a mass visibility edit. It also houses two existing bugs that
    have no natural home today — most importantly that **iOS `logEvent` enforces
    none of the validation the public Dart API documents as "enforced
    natively"**, which Android has had since `DeeplinklyEvent`.
@@ -296,9 +296,6 @@ matches: `dl_event_seq`, `dl_session_id`, `dl_static_profile`,
 
 - iOS `_dl_event_seq` uses plain `UserDefaults.integer + 1` — not synchronised,
   not crash-safe. Android's is `synchronized` + `commit()`; port that.
-- `setTrackingEnabled` is documented in `README.md` and
-  `docs/FLUTTER_SDK.md:223` but is unreachable from the public Dart API — it
-  exists only on `MethodChannelFlutterDeeplinkly`, which is not exported.
 - `CHANGELOG.md`'s `## Unreleased` **Breaking** entry (iOS pasteboard default
   flip) is already live in shipped 1.9.0, and
   `.cursor/skills/flutter-sdk/SKILL.md:74,121-123` still documents the old
