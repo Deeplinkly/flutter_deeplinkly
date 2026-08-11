@@ -44,7 +44,6 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         registrar.register(
             PasteControlFactory(
                 messenger: registrar.messenger(),
-                channel: ch,
                 apiKeyProvider: { storedApiKey ?? "" }
             ),
             withId: "deeplinkly/paste_button"
@@ -52,11 +51,11 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
 
         instance.bootstrap()
 
-            // ✅ Flush any pending universal link that arrived before channel setup
-            if let pending = pendingUniversalLink {
-                pendingUniversalLink = nil
-                DeepLinkHandler.handle(url: pending, channel: ch, apiKey: storedApiKey ?? "")
-            }
+        // Flush any pending universal link that arrived before channel setup.
+        if let pending = pendingUniversalLink {
+            pendingUniversalLink = nil
+            DeepLinkHandler.handle(url: pending, apiKey: storedApiKey ?? "")
+        }
     }
 
     // MARK: - Universal Link Bridge
@@ -68,18 +67,18 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
     /// Calling it twice for one link is harmless — the resolve is idempotent
     /// and `AttributionStore.saveOnce` is write-once.
     public static func handleUniversalLink(_ url: URL) {
-        guard let ch = staticChannel else {
+        guard staticChannel != nil else {
             pendingUniversalLink = url
             return
         }
 
-        // ✅ hand off to DeepLinkHandler (same as Android)
+        // Hand off to DeepLinkHandler, same as Android. Delivery is the
+        // funnel's problem from here; this path no longer needs the channel.
         guard let key = storedApiKey, !key.isEmpty else {
             pendingUniversalLink = url
             return
         }
-        DeepLinkHandler.handle(url: url, channel: ch, apiKey: key)
-
+        DeepLinkHandler.handle(url: url, apiKey: key)
     }
 
     // MARK: - FlutterApplicationLifeCycleDelegate
@@ -186,27 +185,38 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         // per process, and nothing else observed the foreground.
         AppOpenReporter.start(apiKey: key)
 
-        StartupEnrichment.schedule(apiKey: apiKey, channel: channel)
+        StartupEnrichment.schedule(apiKey: apiKey)
 
         // Capture locally: these closures outlive bootstrap() and have no
         // reason to keep the plugin instance alive.
-        let channel = self.channel!
         let apiKey = self.apiKey
 
         // Pasteboard access has to happen on the main thread, and this is the
         // only deferred deep link channel iOS offers — see PasteboardHandler.
         DispatchQueue.main.async {
-            PasteboardHandler.check(channel: channel, apiKey: apiKey)
+            PasteboardHandler.check(apiKey: apiKey)
         }
 
         // retryAll blocks on a semaphore per item (15s timeout, up to 50
         // items). Running it inline froze the UI during plugin registration.
         DispatchQueue.global(qos: .utility).async {
             RetryQueue.retryAll(apiKey: apiKey)
-            DeepLinkHandler.drainPendingResolves(channel: channel, apiKey: apiKey)
+            DeepLinkHandler.drainPendingResolves(apiKey: apiKey)
         }
     }
 
+
+    /// Points the SDK's delivery funnel at this plugin's channel and flushes
+    /// anything buffered while nothing was listening.
+    ///
+    /// Idempotent, and called from both `flutterReady` and the `resumed`
+    /// lifecycle event: an engine that detached and came back needs the
+    /// listener re-pointed, and a flush with an empty buffer sends nothing.
+    private func attachDeepLinkListener() {
+        // SdkRuntime holds the listener for the process lifetime, so there is
+        // nothing to retain here.
+        SdkRuntime.setListener(MethodChannelDeepLinkListener(channel: channel))
+    }
 
     // MARK: - Flutter MethodChannel Handling
     @objc public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -231,14 +241,14 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
             // Dart has attached its onDeepLink handler. Anything the native
             // side produced before now — the pasteboard read in particular —
             // is buffered in SdkRuntime and flushes here.
-            SdkRuntime.setFlutterReady(channel)
+            attachDeepLinkListener()
             result(true)
 
         case "onLifecycleChange":
             let state = (call.arguments as? [String: Any])?["state"] as? String ?? ""
             Logger.d("Lifecycle: \(state)")
             if state == "resumed" {
-                SdkRuntime.setFlutterReady(channel)
+                attachDeepLinkListener()
             }
             result(true)
 
@@ -283,14 +293,14 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
             // waiting for a next launch the pasteboard may not survive to.
             let checkNow = args?["check_now"] as? Bool ?? true
             PasteboardHandler.setCheckEnabled(
-                enabled, channel: channel, apiKey: apiKey, runCheckNow: checkNow)
+                enabled, apiKey: apiKey, runCheckNow: checkNow)
             result(true)
 
         case "willShowPasteboardBanner":
             PasteboardHandler.willShowBanner { willShow in result(willShow) }
 
         case "checkPasteboardNow":
-            PasteboardHandler.check(channel: channel, apiKey: apiKey)
+            PasteboardHandler.check(apiKey: apiKey)
             result(true)
 
         case "setCustomUserId", "setUserId":

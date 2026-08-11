@@ -1,5 +1,4 @@
 // PasteboardHandler.swift
-import Flutter
 import Foundation
 import UIKit
 
@@ -13,7 +12,7 @@ import UIKit
 ///
 /// There are two ways in:
 ///
-/// 1. **Automatic** — `check(channel:apiKey:)` reads the pasteboard directly on
+/// 1. **Automatic** — `check(apiKey:)` reads the pasteboard directly on
 ///    first launch. iOS shows its "Pasted from…" banner, but only when a
 ///    URL-typed item is actually there; see [hasURL]. On by default —
 ///    see [isCheckEnabled].
@@ -92,14 +91,13 @@ enum PasteboardHandler {
     ///   likely been overwritten. That is the one launch that matters.
     static func setCheckEnabled(
         _ enabled: Bool,
-        channel: FlutterMethodChannel? = nil,
         apiKey: String? = nil,
         runCheckNow: Bool = true
     ) {
         UserDefaults.standard.set(enabled, forKey: optInKey)
         Logger.d("Pasteboard check on install set to \(enabled)")
-        guard enabled, runCheckNow, let channel = channel, let apiKey = apiKey else { return }
-        DispatchQueue.main.async { check(channel: channel, apiKey: apiKey) }
+        guard enabled, runCheckNow, let apiKey = apiKey else { return }
+        DispatchQueue.main.async { check(apiKey: apiKey) }
     }
 
     /// Whether calling `check` right now would make iOS show its paste banner.
@@ -123,7 +121,7 @@ enum PasteboardHandler {
 
     // MARK: - Automatic read
 
-    static func check(channel: FlutterMethodChannel, apiKey: String) {
+    static func check(apiKey: String) {
         guard !TrackingPreferences.isTrackingDisabled() else { return }
 
         guard isCheckEnabled() else {
@@ -151,7 +149,7 @@ enum PasteboardHandler {
                 Prefs.set(true, for: checkedKey)
                 return
             }
-            read(channel: channel, apiKey: apiKey)
+            read(apiKey: apiKey)
         }
     }
 
@@ -216,13 +214,13 @@ enum PasteboardHandler {
     }
 
     /// The banner-triggering read. Only reached once we know a URL is there.
-    private static func read(channel: FlutterMethodChannel, apiKey: String) {
+    private static func read(apiKey: String) {
         // Mark before any parsing: a crash mid-handling must not turn into a
         // paste banner on every subsequent launch.
         Prefs.set(true, for: checkedKey)
 
         guard let text = readURLString() else { return }
-        handle(text: text, channel: channel, apiKey: apiKey, source: sourceAutomatic)
+        handle(text: text, apiKey: apiKey, source: sourceAutomatic)
     }
 
     /// Reads the link off the pasteboard, in three descending forms.
@@ -280,7 +278,6 @@ enum PasteboardHandler {
     /// (what Branch does) would miss every link that took a fallback path.
     static func handle(
         itemProviders: [NSItemProvider],
-        channel: FlutterMethodChannel,
         apiKey: String,
         completion: @escaping (Bool) -> Void
     ) {
@@ -304,7 +301,7 @@ enum PasteboardHandler {
                     return
                 }
                 let handled = handle(
-                    text: text, channel: channel, apiKey: apiKey, source: sourcePasteControl)
+                    text: text, apiKey: apiKey, source: sourcePasteControl)
                 completion(handled)
             }
         }
@@ -352,7 +349,6 @@ enum PasteboardHandler {
     @discardableResult
     private static func handle(
         text: String,
-        channel: FlutterMethodChannel,
         apiKey: String,
         source: String
     ) -> Bool {
@@ -388,7 +384,7 @@ enum PasteboardHandler {
             UIPasteboard.general.items = []
         }
 
-        DeepLinkHandler.handle(url: url, channel: channel, apiKey: apiKey, source: source)
+        DeepLinkHandler.handle(url: url, apiKey: apiKey, source: source)
         return true
     }
 }

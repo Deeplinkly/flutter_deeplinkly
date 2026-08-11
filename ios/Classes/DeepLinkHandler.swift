@@ -1,81 +1,10 @@
 // DeepLinkHandler.swift
-import Flutter
 import Foundation
-import UIKit
 
 enum DeepLinkHandler {
     /// Matches Android's `resolveClickWithRetry(maxRetries = 2, initialDelayMs = 50)`.
     private static let maxAttempts = 3
     private static let initialRetryDelay: TimeInterval = 0.05
-
-    /// How long a delivered link is remembered, so a second arrival of the same
-    /// one is dropped rather than delivered again.
-    ///
-    /// Short on purpose. This exists to absorb *mechanical* double-dispatch,
-    /// which lands within milliseconds; it is not meant to decide that a user
-    /// who deliberately taps the same link again two minutes later should be
-    /// ignored. Ten seconds covers every duplicate path below with room to
-    /// spare and expires long before a deliberate re-tap.
-    private static let deliveredWindow: TimeInterval = 10
-
-    /// Links currently being resolved, and links delivered a moment ago.
-    ///
-    /// Three ways one tap becomes two deliveries, and `inFlight` alone only
-    /// covers the first:
-    ///
-    /// 1. `PasteboardHandler` queues a link and resolves it immediately while
-    ///    `drainPendingResolves` runs the queue on the same launch. Both are
-    ///    in flight together, so the set catches it.
-    /// 2. A Universal Link reaching both the application- and scene-delegate
-    ///    paths. Usually concurrent, so usually the set catches it.
-    /// 3. The second arrival landing *after* the first resolve has completed —
-    ///    the claim is released by then, so the set does not catch it, and
-    ///    `onDeepLink` fires twice. Dart does not dedupe: the method channel
-    ///    handler forwards straight to a broadcast stream.
-    ///
-    /// (3) is why `delivered` exists. It is also why the host app may keep
-    /// calling `handleUniversalLink` from its own AppDelegate, which older
-    /// integration guides told it to do, without seeing double deliveries.
-    ///
-    /// Android needs none of this: it has the intent `EXTRA_CONSUMED` extra,
-    /// `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`, and a durable queue claim.
-    private static let inFlightLock = NSLock()
-    private static var inFlight: Set<String> = []
-    private static var delivered: [String: Date] = [:]
-
-    /// Claims `identity` unless it is already resolving, or was delivered
-    /// inside [deliveredWindow].
-    private static func beginIfIdle(_ identity: String, now: Date = Date()) -> Bool {
-        inFlightLock.lock()
-        defer { inFlightLock.unlock() }
-
-        // Pruned here rather than on a timer: the map is touched only when a
-        // link arrives, so there is nothing to clean up between links.
-        delivered = delivered.filter { now.timeIntervalSince($0.value) < deliveredWindow }
-
-        if delivered[identity] != nil {
-            return false
-        }
-        return inFlight.insert(identity).inserted
-    }
-
-    private static func finish(_ identity: String) {
-        inFlightLock.lock()
-        inFlight.remove(identity)
-        inFlightLock.unlock()
-    }
-
-    /// Records that `identity` reached Dart, starting its suppression window.
-    ///
-    /// Called for a fallback as well as a resolved link: from the host app's
-    /// point of view both are one `onDeepLink` for one tap, and the second
-    /// arrival of a link we already answered with a fallback would deliver a
-    /// second one.
-    private static func markDelivered(_ identity: String, now: Date = Date()) {
-        inFlightLock.lock()
-        delivered[identity] = now
-        inFlightLock.unlock()
-    }
 
     /// - Parameter source: how this link reached us. "deep_link" for a Universal
     ///   Link or custom scheme, "clipboard" for the deferred pasteboard path.
@@ -84,7 +13,6 @@ enum DeepLinkHandler {
     ///   filed as an install_referrer, which is not a thing on this platform.
     static func handle(
         url: URL,
-        channel: FlutterMethodChannel,
         apiKey: String,
         source: String = "deep_link"
     ) {
@@ -104,7 +32,7 @@ enum DeepLinkHandler {
         let pending = DeepLinkQueue.PendingResolve(
             clickId: clickId, code: code, uri: url.absoluteString, source: source
         )
-        guard beginIfIdle(pending.identity) else {
+        guard DeepLinkDeliveryGuard.beginIfIdle(pending.identity) else {
             Logger.d("Already resolving \(pending.identity); skipping duplicate.")
             return
         }
@@ -157,7 +85,7 @@ enum DeepLinkHandler {
             clickId: clickId, code: code, apiKey: apiKey,
             localParams: localParams, attempt: 1
         ) { result in
-            defer { finish(pending.identity) }
+            defer { DeepLinkDeliveryGuard.finish(pending.identity) }
             switch result {
             case .success(let json):
                 // An unknown click id comes back 200 with stale: true. Delivering
@@ -180,12 +108,12 @@ enum DeepLinkHandler {
                 )
                 AttributionStore.saveOnce(map: normalized)
 
-                // Notify Flutter (buffered if Dart is not listening yet). The
-                // queue entry is only dropped once the app has really received
-                // the link — being killed while it sat in the buffer would
+                // Hand to the listener (buffered if none has attached yet). The
+                // queue entry is only dropped once the link has really been
+                // received — being killed while it sat in the buffer would
                 // otherwise lose it, and the pasteboard copy is long gone.
-                markDelivered(pending.identity)
-                SdkRuntime.postToFlutter(channel, method: "onDeepLink", args: dartMap) {
+                DeepLinkDeliveryGuard.markDelivered(pending.identity)
+                SdkRuntime.deliverDeepLink(dartMap) {
                     DeepLinkQueue.remove(pending)
                 }
                 EnrichmentSender.sendOnce(
@@ -236,8 +164,8 @@ enum DeepLinkHandler {
                 AttributionStore.saveOnce(
                     map: NetworkUtils.attributionSnapshot(
                         resolved: fallback, source: source, fallbackClickId: clickId))
-                markDelivered(pending.identity)
-                SdkRuntime.postToFlutter(channel, method: "onDeepLink", args: fallback)
+                DeepLinkDeliveryGuard.markDelivered(pending.identity)
+                SdkRuntime.deliverDeepLink(fallback)
             }
         }
     }
@@ -274,7 +202,7 @@ enum DeepLinkHandler {
     /// Retries links whose resolve never completed — an offline first launch
     /// after a deferred install being the case that matters, since the
     /// pasteboard copy is gone by then.
-    static func drainPendingResolves(channel: FlutterMethodChannel, apiKey: String) {
+    static func drainPendingResolves(apiKey: String) {
         let pending = DeepLinkQueue.all()
         guard !pending.isEmpty else { return }
         Logger.d("Draining \(pending.count) pending resolve(s)")
@@ -283,7 +211,7 @@ enum DeepLinkHandler {
                 DeepLinkQueue.remove(item)
                 continue
             }
-            handle(url: url, channel: channel, apiKey: apiKey, source: item.source)
+            handle(url: url, apiKey: apiKey, source: item.source)
         }
     }
 }

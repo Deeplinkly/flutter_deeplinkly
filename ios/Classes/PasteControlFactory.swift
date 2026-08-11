@@ -19,16 +19,13 @@ import UIKit
 /// its availability back over the per-view channel so Dart can decide.
 class PasteControlFactory: NSObject, FlutterPlatformViewFactory {
     private let messenger: FlutterBinaryMessenger
-    private let channel: FlutterMethodChannel
     private let apiKeyProvider: () -> String
 
     init(
         messenger: FlutterBinaryMessenger,
-        channel: FlutterMethodChannel,
         apiKeyProvider: @escaping () -> String
     ) {
         self.messenger = messenger
-        self.channel = channel
         self.apiKeyProvider = apiKeyProvider
         super.init()
     }
@@ -41,7 +38,6 @@ class PasteControlFactory: NSObject, FlutterPlatformViewFactory {
             viewId: viewId,
             args: args as? [String: Any] ?? [:],
             messenger: messenger,
-            channel: channel,
             apiKeyProvider: apiKeyProvider
         )
     }
@@ -61,7 +57,6 @@ class PasteControlView: NSObject, FlutterPlatformView {
         viewId: Int64,
         args: [String: Any],
         messenger: FlutterBinaryMessenger,
-        channel: FlutterMethodChannel,
         apiKeyProvider: @escaping () -> String
     ) {
         container = PasteResponderView(frame: frame)
@@ -72,7 +67,6 @@ class PasteControlView: NSObject, FlutterPlatformView {
         container.onPaste = { [weak self] providers in
             PasteboardHandler.handle(
                 itemProviders: providers,
-                channel: channel,
                 apiKey: apiKeyProvider()
             ) { handled in
                 // Tell the button's owner what happened so it can dismiss

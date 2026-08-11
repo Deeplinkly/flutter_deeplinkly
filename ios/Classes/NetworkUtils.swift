@@ -27,6 +27,20 @@ enum NetworkError: Error, LocalizedError {
 }
 
 enum NetworkUtils {
+    /// The session every request goes through.
+    ///
+    /// The only seam between this file and the network. `URLSession.shared` in
+    /// production; tests swap in a session whose configuration installs a
+    /// `URLProtocol` stub, which is the one way to intercept these calls —
+    /// `URLSession.shared` ignores `protocolClasses` by design, and
+    /// `DomainConfig` points at a **production** backend that no test may
+    /// reach.
+    ///
+    /// A mutable static rather than an injected parameter because every caller
+    /// here is itself static, and threading a session through all of them would
+    /// be a larger change than the one it enables.
+    static var session: URLSession = .shared
+
     private static func request(
         _ url: String,
         method: String = "GET",
@@ -55,7 +69,7 @@ enum NetworkUtils {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
 
-        URLSession.shared.dataTask(with: req) { data, response, err in
+        session.dataTask(with: req) { data, response, err in
             if let err = err {
                 completion(.failure(err))
                 return

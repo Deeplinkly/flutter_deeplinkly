@@ -1,7 +1,5 @@
 // StartupEnrichment.swift
-import Flutter
 import Foundation
-import UIKit
 
 enum StartupEnrichment {
     private static let lock = NSLock()
@@ -9,7 +7,7 @@ enum StartupEnrichment {
 
     private static let timeout: TimeInterval = 30
 
-    static func schedule(apiKey: String, channel: FlutterMethodChannel) {
+    static func schedule(apiKey: String) {
         lock.lock()
         guard !sentThisProcess else {
             lock.unlock()
