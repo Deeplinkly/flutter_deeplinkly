@@ -3,7 +3,6 @@ package com.deeplinkly.flutter_deeplinkly.queue
 import android.content.Context
 import com.deeplinkly.flutter_deeplinkly.core.Logger
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
-import com.deeplinkly.flutter_deeplinkly.network.DomainConfig
 import com.deeplinkly.flutter_deeplinkly.network.DeeplinklyNetwork
 import com.deeplinkly.flutter_deeplinkly.network.isTerminalHttp
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
@@ -20,10 +19,22 @@ import kotlinx.coroutines.CancellationException
  */
 object QueueProcessor {
     private val isProcessing = AtomicBoolean(false)
-    private var processingJob: Job? = null
     private var periodicJob: Job? = null
-    private const val PERIODIC_INTERVAL_MS = 2000L // Process every 2 seconds
-    
+
+    /** How often to look while there is anything queued. */
+    private const val PERIODIC_INTERVAL_MS = 2000L
+
+    /**
+     * How often to look while both queues are empty.
+     *
+     * The loop used to tick every 2s for the life of the process whether or not
+     * there was anything to do, which for the overwhelmingly common case - no
+     * pending links at all - is ~1800 pointless wakeups an hour. Backing off
+     * rather than stopping keeps the recovery path simple: nothing has to
+     * remember to restart the loop when an item is queued.
+     */
+    private const val IDLE_INTERVAL_MS = 30_000L
+
     /**
      * Start processing queues (non-blocking)
      */
@@ -39,12 +50,23 @@ object QueueProcessor {
         periodicJob = SdkRuntime.ioLaunch {
             while (isActive) {
                 try {
-                    delay(PERIODIC_INTERVAL_MS)
-                    if (!isProcessing.get()) {
+                    delay(if (DeepLinkQueue.isIdle()) IDLE_INTERVAL_MS else PERIODIC_INTERVAL_MS)
+                    // Claim the flag, don't just read it. A bare get() leaves
+                    // the exact gap processNow's compareAndSet was added to
+                    // close: a tick that passes the check just before
+                    // processNow claims it runs the whole drain concurrently
+                    // with it, resolving every queued link twice and
+                    // delivering each one twice.
+                    if (!isProcessing.compareAndSet(false, true)) {
+                        continue
+                    }
+                    try {
                         processResolveQueue(apiKey)
                         withContext(Dispatchers.Main) {
                             processDeliveryQueue(channel)
                         }
+                    } finally {
+                        isProcessing.set(false)
                     }
                 } catch (e: Exception) {
                     if (e !is CancellationException) {
@@ -59,7 +81,6 @@ object QueueProcessor {
      * Stop processing queues
      */
     fun stopProcessing() {
-        processingJob?.cancel()
         periodicJob?.cancel()
         isProcessing.set(false)
         Logger.d("Queue processor stopped")
@@ -93,19 +114,31 @@ object QueueProcessor {
                 return@forEach
             }
 
+            if (pending.clickId == null && pending.code == null) {
+                Logger.w("Pending resolve has no clickId or code, removing")
+                DeepLinkQueue.removeResolve(pending)
+                return@forEach
+            }
+
+            // Skip anything a handler is already resolving; it will remove the
+            // entry itself on success. Without this the handler's own request
+            // and this one both resolve the click and both enqueue a delivery.
+            if (!DeepLinkQueue.claimResolve(pending)) {
+                Logger.d("Resolve already in flight, skipping: clickId=${pending.clickId}, code=${pending.code}")
+                return@forEach
+            }
+
             try {
-                val resolveUrl = if (pending.clickId != null) {
-                    "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?click_id=${pending.clickId}"
-                } else if (pending.code != null) {
-                    "${DomainConfig.RESOLVE_CLICK_ENDPOINT}?code=${pending.code}"
-                } else {
-                    Logger.w("Pending resolve has no clickId or code, removing")
-                    DeepLinkQueue.removeResolve(pending)
-                    return@forEach
-                }
-                
+                // localParams carries the click-time UTMs off the original
+                // link. They matter most here on the resolve-by-code path,
+                // where the backend creates the ClickEvent and reads them
+                // straight off the query string.
+                val resolveUrl = DeeplinklyNetwork.resolveUrl(
+                    pending.clickId, pending.code, pending.localParams
+                )
+
                 Logger.d("Resolving: $resolveUrl (attempt ${pending.attemptCount + 1})")
-                
+
                 val (_, json) = DeeplinklyNetwork.resolveClickWithRetry(resolveUrl, apiKey, maxRetries = 3)
 
                 // An unknown click id comes back 200 with stale: true. Retrying
@@ -119,13 +152,16 @@ object QueueProcessor {
 
                 val resolvedData = DeeplinklyNetwork.extractParamsFromJson(json, pending.clickId)
                 
-                // Merge enrichment data
-                val enrichmentData = pending.enrichmentData.toMutableMap()
-                (resolvedData["click_id"] as? String)?.let { enrichmentData["click_id"] = it }
+                // Carry the link identity forward, updated with whatever the
+                // resolve actually returned. No device signals ride along —
+                // this item may have been queued days ago, and the sender
+                // collects the device half fresh.
+                val attributionData = pending.attributionData.toMutableMap()
+                (resolvedData["click_id"] as? String)?.let { attributionData["click_id"] = it }
                 
                 // Save attribution
                 val normalized = DeeplinklyNetwork.attributionSnapshot(
-                    resolvedData, source = "deep_link", fallbackClickId = pending.clickId
+                    resolvedData, source = pending.source, fallbackClickId = pending.clickId
                 )
                 AttributionStore.saveOnce(normalized)
                 
@@ -133,22 +169,17 @@ object QueueProcessor {
                 DeepLinkQueue.enqueueDelivery(
                     DeepLinkQueue.PendingDelivery(
                         resolvedData = resolvedData,
-                        enrichmentData = enrichmentData,
-                        source = "deep_link"
+                        attributionData = attributionData,
+                        source = pending.source
                     )
                 )
-                
+
                 // Remove from resolve queue
                 DeepLinkQueue.removeResolve(pending)
-                
+
                 // Send enrichment
                 try {
-                    EnrichmentSender.sendOnce(
-                        com.deeplinkly.flutter_deeplinkly.core.DeeplinklyContext.app,
-                        enrichmentData,
-                        "deep_link",
-                        apiKey
-                    )
+                    EnrichmentSender.sendOnce(attributionData, pending.source, apiKey)
                 } catch (e: Exception) {
                     Logger.e("Failed to send enrichment after resolve", e)
                 }
@@ -184,22 +215,24 @@ object QueueProcessor {
                     DeepLinkQueue.enqueueDelivery(
                         DeepLinkQueue.PendingDelivery(
                             resolvedData = fallbackData,
-                            enrichmentData = pending.enrichmentData,
-                            source = "deep_link_fallback"
+                            attributionData = pending.attributionData,
+                            source = "${pending.source}_fallback"
                         )
                     )
                     
                     AttributionStore.saveOnce(
                         DeeplinklyNetwork.attributionSnapshot(
-                            fallbackData, source = "deep_link", fallbackClickId = pending.clickId
+                            fallbackData, source = pending.source, fallbackClickId = pending.clickId
                         )
                     )
                     DeepLinkQueue.removeResolve(updated)
                 }
+            } finally {
+                DeepLinkQueue.releaseResolve(pending)
             }
         }
     }
-    
+
     /**
      * Process pending deliveries to Flutter
      */
@@ -209,34 +242,35 @@ object QueueProcessor {
             return@withContext
         }
         
-        val queue = DeepLinkQueue.getDeliveryQueue()
+        // Anything already on its way to Flutter is skipped rather than sent a
+        // second time; deliverDeepLink releases the claim either way, so a
+        // failed attempt is picked up again on the next pass.
+        val queue = DeepLinkQueue.getDeliverableQueue()
         if (queue.isEmpty()) {
             return@withContext
         }
-        
+
         Logger.d("Processing ${queue.size} pending deliveries")
-        
-        queue.forEach { pending ->
-            try {
-                SdkRuntime.postToFlutter(channel, "onDeepLink", pending.resolvedData)
-                DeepLinkQueue.removeDelivery(pending)
-                Logger.d("Delivered deep link to Flutter: source=${pending.source}")
-            } catch (e: Exception) {
-                Logger.e("Failed to deliver deep link to Flutter", e)
-                // Keep in queue for retry
-            }
-        }
+
+        // Removal is deliverDeepLink's job, and it happens only once the channel
+        // has taken the link.
+        queue.forEach { pending -> SdkRuntime.deliverDeepLink(pending) }
     }
     
     /**
      * Process queues immediately (called when Flutter becomes ready)
      */
     fun processNow(channel: MethodChannel?, apiKey: String) {
-        if (isProcessing.get()) {
+        // One atomic claim, not a get() followed by a set(). Dart announces
+        // itself twice at startup - flutterReady and the resumed lifecycle
+        // event - and startProcessing adds a third call at activity attach, all
+        // of them landing on the IO dispatcher at once. Two callers passing the
+        // read before either wrote drained the same resolve queue in parallel,
+        // which resolved every pending link twice and delivered each one twice.
+        if (!isProcessing.compareAndSet(false, true)) {
             return // Already processing
         }
-        
-        isProcessing.set(true)
+
         SdkRuntime.ioLaunch {
             try {
                 processResolveQueue(apiKey)

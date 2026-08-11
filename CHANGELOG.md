@@ -1,3 +1,337 @@
+## Unreleased
+
+### Breaking
+
+- **iOS: the automatic pasteboard read is now on by default.** Deferred deep
+  linking is why most apps integrate this SDK, and on iOS the pasteboard is the
+  only mechanism there is — off by default meant it silently did not work for
+  anyone who had not found the right doc page. Branch reached the same
+  conclusion: their Flutter plugin enables it unless the host app opts out.
+
+  **Upgrading apps will start showing the system "Pasted from…" banner** on
+  first launch, once per install, when the clipboard holds a URL. To keep the
+  previous behaviour:
+
+  ```xml
+  <key>DeeplinklyCheckPasteboardOnInstall</key>
+  <false/>
+  ```
+
+  It must be Info.plist rather than `setCheckPasteboardOnInstall(false)`: the
+  read happens during plugin registration, before any Dart runs.
+
+  `DeeplinklyPasteButton` is unaffected and still shows no banner at all.
+
+### Changed
+
+- **iOS: the pasteboard is probed with `hasURLs`**, paired with the
+  interstitial now writing a `ClipboardItem` of type `text/uri-list` alongside
+  `text/plain` instead of `navigator.clipboard.writeText` alone. WebKit maps
+  `text/uri-list` onto `public.url`, which is the type `hasURLs` inspects. This
+  replaces `hasStrings` below iOS 16 and demotes
+  `detectPatterns(.probableWebURL)` to a secondary probe on iOS 16+.
+
+  The old pre-iOS-16 path was the problem: `hasStrings` is true for *any* text,
+  so a copied phone number or password led to a read and a banner for content
+  that was never ours. `hasURLs` is false for text that is not a URL, so every
+  supported iOS version now behaves alike — which is what makes the default
+  above safe without an iOS 16 floor.
+
+  **The two halves have to ship together.** `hasURLs` on a plain-text item
+  depends on UIPasteboard coercing the string back into a URL, and that is not
+  dependable — an SDK probing with `hasURLs` against an interstitial that writes
+  only plain text can miss the link, and `check` marks the install checked
+  either way, so it is one lost install with no retry and nothing in any log.
+  `detectPatterns(.probableWebURL)` is retained as a banner-free second probe
+  precisely to cover that gap: the interstitial's `writeText` and `execCommand`
+  fallbacks still produce plain text, as do links copied before the web change
+  shipped. Below iOS 16 there is no such backstop.
+
+  The read now also handles a `public.url` item whose payload is a string or
+  data rather than a `URL`. Such an item reports `hasURLs == true` while both
+  `url` and `string` answer nil, so it would previously have raised the banner
+  and then dropped the link.
+
+- **Android: `advertising_id` now requires an explicit dependency.** The SDK
+  compiles against `play-services-ads-identifier` but no longer bundles it,
+  because that library's manifest declares
+  `com.google.android.gms.permission.AD_ID` and bundling it added that
+  permission to every host app — a problem for apps under Play's Families
+  policy. Add it yourself to keep reporting the advertising ID:
+
+  ```groovy
+  implementation 'com.google.android.gms:play-services-ads-identifier:18.2.0'
+  ```
+
+  Apps that do not add it report no `advertising_id`; nothing else changes, and
+  attribution still resolves deterministically on the click id and install
+  referrer.
+- Renamed the reserved event parameter `_dl_client_monotonic_ms` to
+  `_dl_client_elapsed_ms`. It now carries milliseconds since the SDK
+  initialised rather than a raw monotonic clock reading — same ordering power
+  for events from a device with a wrong wall clock, without reporting how long
+  the device has been booted.
+
+### Removed
+
+- Five permissions no longer reach host apps. `androidx.work` was declared but
+  never used while merging `WAKE_LOCK`, `ACCESS_NETWORK_STATE`,
+  `RECEIVE_BOOT_COMPLETED` and `FOREGROUND_SERVICE` into every app; it is gone.
+  `AD_ID` is gone per the note above. The SDK now declares only `INTERNET`.
+- `device_name`, `boot_time`, `device_memory_mb` and `device_storage_mb` are no
+  longer collected on either platform.
+
+### Fixed
+
+- **Android: a phone restored from backup no longer inherits the old phone's
+  install.** `deeplinkly_prefs` participates in Auto Backup by default, so
+  every latch the SDK writes came back describing an install that no longer
+  existed. Worst of the three: `install_referrer_handled` returned true, so the
+  referrer of the genuinely new install was **never read** — deferred
+  attribution failing closed, with no log line and no retry. The other two were
+  a permanently inherited `initial_attribution` and one `deeplinkly_device_id`
+  shared by two physical devices. The SDK now stamps preferences with an
+  install identity and clears install-scoped state when it does not match.
+
+  The identity is derived from the SSAID and `firstInstallTime`, not
+  `Build.FINGERPRINT` — it has to survive an OS update and not survive a
+  restore, and FINGERPRINT gets that exactly backwards. Your privacy choices
+  are preserved across a restore: attribution level, the tracking-disabled
+  flag, and `custom_user_id` are never cleared.
+- **iOS delivers one `onDeepLink` per tap when a link arrives twice.** The
+  duplicate guard only covered arrivals that overlapped in time; a second
+  arrival landing after the first resolve finished fired the callback again,
+  and Dart forwards straight to a broadcast stream without deduping. A
+  delivered link is now remembered for ten seconds — long enough for every
+  mechanical double-dispatch (both delegate paths, a host app that also calls
+  `handleUniversalLink` itself), short enough that a deliberate re-tap still
+  works.
+- **iOS no longer resolves your own routes as Deeplinkly links.** The first
+  path segment of *any* opened URL was read as a link code, so
+  `yourapp://settings/notifications` was resolved as code `notifications`,
+  came back 404, and the failure path then delivered an `onDeepLink` carrying
+  a URL that had nothing to do with Deeplinkly. It also leaked in-app
+  navigation paths to the API as attempted codes. iOS now applies the same
+  rule Android has: custom schemes are never read for a code, and http(s)
+  URLs only when the host is in `DeeplinklyLinkDomains` (permissive when that
+  key is unset). Set it if your app Universal Links any host besides its link
+  domain.
+- **iOS forwards click-time UTMs on `/resolve`.** Resolving by `code` makes the
+  backend create the ClickEvent — the Universal Link opened the app directly,
+  so the server never saw the click — and it reads UTMs and ad-click ids off
+  the query string. iOS sent neither, so every UTM on a link that opened
+  through a verified Universal Link was dropped. They now ride on the resolve
+  URL, as they have on Android. A literal `+` in a value is percent-encoded
+  rather than arriving as a space.
+- **iOS retries a failed Universal Link resolve across launches.** Only the
+  pasteboard path enqueued anything, so the failure branch recorded attempts
+  against an entry that was never queued — a silent no-op. A Universal Link
+  tapped offline got three attempts spanning 150 ms and was then abandoned to
+  a params-only fallback for the life of the install, while Android retried
+  the same link until it succeeded. Related: a transient failure no longer
+  delivers a fallback *and* keeps retrying, which would have fired
+  `onDeepLink` twice for one tap; the retry now owns the delivery, and the
+  fallback goes out only when the resolve is rejected outright or out of
+  attempts.
+- **Android reports the moment a link was opened.** The timestamp was collected
+  by both handlers and deliberately carried through the durable queue, then
+  dropped one step before the wire: it was keyed `event_at`, which is in no
+  signal catalogue, and the catalogue is fail-closed. It now uses the
+  catalogued `android_reported_at`, mirroring iOS's `ios_reported_at`. A
+  sample delivered by a retry days later is finally dated to the event rather
+  than to the retry that carried it.
+- The advertising ID and the Android ID (SSAID) are never sent in the same
+  payload. Google Play's Advertising ID policy prohibits connecting the
+  advertising ID to persistent device identifiers; when an advertising ID is
+  present the SSAID is now dropped.
+- `connection_type` on Android no longer silently fails on API 21–22:
+  `getActiveNetwork` is API 23, and the call threw `NoSuchMethodError` into a
+  catch block, so the field simply never appeared there. It now falls back to
+  the legacy API.
+
+## 1.9.0
+
+### Breaking
+
+* **The automatic pasteboard read is now opt-in and off by default.** 1.8.0 read
+  the pasteboard on first launch to recover a deferred deep link, which showed
+  iOS's "Pasted from…" banner without the integrator having asked for it. To
+  keep 1.8.0 behaviour, either set `DeeplinklyCheckPasteboardOnInstall` to
+  `true` in `Info.plist` (earliest, and what we recommend) or call
+  `FlutterDeeplinkly.setCheckPasteboardOnInstall(true)`.
+
+  Better still, use the new `DeeplinklyPasteButton` and take no banner at all.
+
+* **Android's clipboard fallback is gone entirely.** It was only ever a
+  fallback behind the Play Install Referrer, which is signed by Google, needs
+  no permission and no user gesture, and works for every install — the
+  clipboard read was worse on all three counts and is now removed rather than
+  merely disabled. `com.deeplinkly.sdk.check_clipboard_on_install` is no longer
+  read. Deferred deep linking on Android is unaffected; it has always run on the
+  Install Referrer.
+
+  The three pasteboard methods stay on the Dart API and stay callable from
+  shared code — `setCheckPasteboardOnInstall`, `willShowPasteboardBanner` and
+  `checkPasteboardNow` simply answer `false` on Android now.
+
+### Added
+
+* **`DeeplinklyPasteButton` — deferred deep linking with no paste banner.**
+  A system `UIPasteControl` (iOS 16+) rendered inside your widget tree. Because
+  the user taps it themselves, iOS treats the tap as the grant and shows no
+  "Pasted from…" banner at all. The recovered link arrives on `deepLinkStream`
+  exactly like any other; the widget's `onPasted` callback only reports whether
+  the pasted content was one of your links.
+
+  ```dart
+  DeeplinklyPasteButton(
+    onPasted: (handled) => setState(() => _showPasteButton = !handled),
+    fallback: const SizedBox.shrink(),
+  )
+  ```
+
+  Renders `fallback` on Android and on iOS below 16, so it is safe to place
+  unconditionally. Accepts both URL- and plain-text-typed pasteboard items,
+  which matters because `navigator.clipboard.writeText` in Safari produces text.
+
+* **Attribution levels.** `setAttributionLevel` restricts how much the SDK may
+  report, for consent flows that need a middle ground between "track" and
+  "don't":
+
+  | Level | Effect |
+  |---|---|
+  | `full` | Everything. The default, and the pre-1.9.0 behaviour |
+  | `reduced` | Drops screen geometry, pixel ratio, core count, device model, and the Android advertising ID and Android ID. No fingerprint block on resolve |
+  | `minimal` | Only the install id, app build, and the link being reported on. Nothing describing the device |
+  | `none` | No enrichment sent at all. Links still resolve and still deliver |
+
+  Set `DeeplinklyAttributionLevel` in `Info.plist` or the
+  `com.deeplinkly.sdk.attribution_level` manifest meta-data to start restricted
+  before any Dart runs — enrichment can be sent during plugin registration.
+  `setTrackingEnabled(false)` still wins and behaves as `none`.
+
+* **`willShowPasteboardBanner()`** answers whether reading the pasteboard right
+  now would show the system banner — true only when the read is enabled, has not
+  already happened, tracking is on, and there is plausibly a URL to read. It
+  reads no content and shows no banner itself, so you can use it to put up a
+  priming screen before the prompt rather than letting it arrive unexplained.
+  Pair with `checkPasteboardNow()`. Always false on Android, which has no banner.
+
+### Fixed
+
+* **Android: one deep link now fires `onDeepLink` once.** Four paths could
+  deliver the same click twice, all of them off the happy path, which is why
+  they survived testing:
+
+  - A transient resolve failure delivered a fallback payload immediately *and*
+    left the link queued, so the queue processor delivered it again seconds
+    later once the network recovered — first carrying only the URL's own query
+    params, then the resolved ones. A fallback and a retry are now alternatives:
+    the queue owns the delivery whenever a retry can still succeed, and the
+    fallback is delivered only when the failure is terminal and nothing better
+    is coming. On a fully offline launch the link now arrives once, a few
+    seconds later, rather than twice.
+  - The periodic queue drain tested the "already processing" flag without
+    claiming it, so it could run the whole drain alongside `processNow` and
+    resolve every queued link twice.
+  - Every handler enqueues its pending resolve *before* attempting its own, and
+    nothing stopped the periodic processor from resolving the same click in
+    parallel — reachable on a slow first launch, on the deferred install path.
+    Resolves are now claimed the way deliveries already were.
+  - Same fallback-and-retry duplication as above on the clipboard path.
+
+* **Android: the SDK no longer claims deep links that are not Deeplinkly's.**
+  Any first path segment was read as a short code, so an app's own custom-scheme
+  route (`yourapp://settings/notifications`) was resolved against the backend as
+  code `notifications`. That returns 404, 404 is terminal, and the handler
+  delivered a fallback — so opening an in-app screen fired `onDeepLink` with a
+  URL that had nothing to do with Deeplinkly. Custom-scheme URLs without a
+  `click_id` are now ignored, and the new optional
+  `com.deeplinkly.sdk.link_domains` meta-data narrows the http(s) case for apps
+  that App Link more than their link domain. Links that came through the
+  redirect are unaffected — they carry a `click_id`.
+
+* **Android: click-time UTMs survive the App Link bypass.** When a verified App
+  Link opens the app directly the backend never sees the click, so the SDK
+  resolves by code and the backend creates the ClickEvent then — reading UTMs
+  and ad-click ids off the query string. The SDK sent none, so every
+  `utm_*`/`gclid`/`fbclid`/`ttclid` on a link that opened this way was dropped,
+  on what is the most common Android deep-link path for an installed app. They
+  are now forwarded on both the initial resolve and the retry. Only those keys
+  are sent; the rest of the link's query string stays on the device.
+
+* **Android: `advertising_id` is collected on the deep-link path again.**
+  Enrichment was gathered on the thread `handleIntent` was called on, which is
+  the main thread, and `AdvertisingIdClient.getAdvertisingIdInfo` throws
+  outright when called there. The throw was swallowed, so the id was silently
+  never collected — it only ever appeared when the install-referrer or startup
+  path happened to populate the cache first. Collection now runs on the IO
+  dispatcher, which also takes PackageManager and `Settings.Secure` reads off
+  intent dispatch.
+
+* **Android: a recovered link keeps the source that queued it.** The retry
+  processor labelled everything it resolved `deep_link`, so an install-referrer
+  resolve that failed once and succeeded on retry was stored locally as an
+  ordinary deep link. Backend attribution was never affected — the signed
+  referrer in the payload always outranked it.
+
+* **Android: the install-referrer callback catches its own failures.** It had a
+  `finally` but no `catch`, so a `RemoteException` from a dying Play service
+  unwound into Google's binder callback instead of being handled and retried on
+  the next launch. Its "already processing" guard is also a real atomic claim
+  now rather than a read followed by a write.
+
+* **Android: the enrichment/event retry queue no longer loses entries.** It was
+  stored as a `Set<String>`, so entries came back in arbitrary order, an
+  overflow trim dropped a random one rather than the oldest, and two identical
+  payloads collapsed into one — silently discarding a pending report. Now a
+  JSON array with per-item ids, migrating the old key on first write. Its drain
+  guard is atomic too, so two attaches can no longer re-send the same queued
+  enrichment twice.
+
+* **Android: assorted single-writer fixes.** The startup enrichment claimed its
+  "already sent" flag inside the coroutine that sends, so two attribution saves
+  landing together sent it twice. `logEvent`'s sequence counter was a
+  non-atomic read-modify-write, so concurrent calls could be handed the same
+  number. Queue removal no longer falls back to matching on `createdAt`, which
+  dropped an unrelated entry queued in the same millisecond.
+
+* **Android: a JSON null in stored attribution no longer reads as `"null"`.**
+  `AttributionStore.get()` used `optString(key, "")`, which on Android answers
+  the literal string for a JSON null — non-blank, and so true for every
+  `isNullOrBlank` check the SDK and the host app make.
+
+* **Android: no device fingerprint is sent on resolve.** `/resolve` stopped
+  using device signals to match a click to an install some time ago and reads
+  the key only to discard it, so building and sending one described the user's
+  device for nothing.
+
+* **iOS: the paste button now reports itself as `paste_control`.** Both
+  pasteboard read paths shared one handler that hard-coded the source as
+  `clipboard`, so every `DeeplinklyPasteButton` recovery was filed under the
+  automatic read. The two mechanisms could not be told apart in reporting at
+  all: the paste button appeared to recover nothing, and the automatic read's
+  numbers were a blend of both. Nothing to change in your app.
+
+* **Android: deep links opened from the OS now report `source: "deep_link"`.**
+  The Android deep-link handler was the only one that never named its
+  mechanism — the clipboard handler sends `clipboard`, the install-referrer
+  handler carries the referrer itself — leaving the backend to infer it. An
+  inferred source is treated as provisional and can be replaced by any later
+  report, so a genuine deep link was the weakest claim the SDK made instead of
+  one of the strongest. iOS has always sent this.
+
+### Documentation
+
+* **Android App Links setup was wrong and is now documented properly.** The
+  manifest snippet put `android:autoVerify="true"` on a *custom scheme* filter,
+  where it does nothing, and never showed an `https` filter at all. Following it
+  left App Links unverified, so every link detoured through the browser and an
+  `intent://` redirect — which in-app browsers (Instagram, Facebook, TikTok)
+  frequently block, breaking the link even with the app installed. The README,
+  `docs/FLUTTER_SDK.md` and the example app now declare both filters, and the
+  docs cover fingerprint setup and `adb shell pm get-app-links` verification.
+
 ## 1.8.0
 
 ### Breaking

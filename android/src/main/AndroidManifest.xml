@@ -2,6 +2,33 @@
     package="com.deeplinkly.flutter_deeplinkly">
 
     <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
+
+    <!--
+      com.google.android.gms.permission.AD_ID is deliberately NOT declared here.
+
+      It arrives with play-services-ads-identifier, whose own AAR manifest
+      declares it — so declaring it here as well changed nothing while that
+      library was bundled. It is now compileOnly, which keeps its manifest out
+      of the merge entirely, and a host app opts into advertising-ID collection
+      by adding the dependency itself:
+
+          implementation 'com.google.android.gms:play-services-ads-identifier:18.2.0'
+
+      That matters for apps under Play's Families policy, which may not collect
+      an advertising ID at all and should not inherit a permission for one from
+      a deep-linking SDK.
+    -->
+
+    <!--
+      ACCESS_NETWORK_STATE is deliberately NOT declared here.
+
+      It is the only permission `connection_type` needs, and declaring it would
+      merge it into every host app's manifest and their Play listing for one
+      reduced-tier reporting field. DynamicSignals checks for it at runtime
+      instead: apps that already hold it — most apps of any size do — still
+      report connection_type, and apps that do not lose that one field and
+      nothing else. Branch takes the same approach and ships an empty manifest.
+    -->
+
 
 </manifest>

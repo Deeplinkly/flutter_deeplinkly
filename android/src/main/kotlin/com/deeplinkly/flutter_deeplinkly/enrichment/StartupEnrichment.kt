@@ -12,7 +12,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 object StartupEnrichment {
-    @Volatile private var sentThisProcess = false
+    /**
+     * Whether this process has already sent (or committed to sending) its
+     * startup enrichment.
+     *
+     * An AtomicBoolean claimed with compareAndSet, not a plain flag: it used to
+     * be set inside the coroutine that does the sending, so two attribution
+     * saves landing together both passed the guard before either wrote, and the
+     * startup enrichment went out twice.
+     */
+    private val sentThisProcess = AtomicBoolean(false)
     private val isWaiting = AtomicBoolean(false)
     private val startTime = AtomicLong(0)
     private var attributionListener: ((Map<String, String>) -> Unit)? = null
@@ -22,7 +31,7 @@ object StartupEnrichment {
 
     /** Call once from the plugin after you've set DeeplinklyContext.app and have apiKey. */
     fun schedule(apiKey: String, timeoutMs: Long = DEFAULT_TIMEOUT_MS) {
-        if (sentThisProcess) {
+        if (sentThisProcess.get()) {
             Logger.d("StartupEnrichment: already sent in this process.")
             return
         }
@@ -54,7 +63,7 @@ object StartupEnrichment {
                 delay(MIN_WAIT_TIME_MS)
                 
                 // Check if we already sent
-                if (sentThisProcess) {
+                if (sentThisProcess.get()) {
                     return@ioLaunch
                 }
                 
@@ -135,30 +144,24 @@ object StartupEnrichment {
      * Send enrichment data
      */
     private fun sendEnrichment(apiKey: String, attribution: Map<String, String>, force: Boolean = false) {
-        if (sentThisProcess && !force) {
+        // Claimed before the launch, not inside it. The listener fires on every
+        // AttributionStore write, so two saves landing together both reached
+        // the send when this was a plain read.
+        if (!sentThisProcess.compareAndSet(false, true)) {
             return
         }
-        
+
         // Launch coroutine to call suspend function
         SdkRuntime.ioLaunch {
             try {
-                // Build enrichment data: base + first-touch attribution
-                val base = DeeplinklyUtils.collectEnrichment().toMutableMap()
-                base.putAll(attribution.mapValues { it.value })
-                
-                // Only send if we have meaningful data or if forced
-                if (force || hasAttributionData(attribution) || base.isNotEmpty()) {
-                    EnrichmentSender.sendOnce(
-                        context = DeeplinklyContext.app,
-                        enrichmentData = base,
-                        source = "app_start",
-                        apiKey = apiKey
-                    )
-                    sentThisProcess = true
-                    Logger.d("StartupEnrichment: sent (force=$force, hasData=${hasAttributionData(attribution)}).")
-                } else {
-                    Logger.d("StartupEnrichment: no meaningful data, skipping.")
-                }
+                // Only the first-touch attribution is passed. The device half
+                // is assembled inside the sender, fresh, at send time.
+                EnrichmentSender.sendOnce(
+                    attributionData = attribution.mapValues { it.value },
+                    source = "app_start",
+                    apiKey = apiKey,
+                )
+                Logger.d("StartupEnrichment: sent (force=$force, hasData=${hasAttributionData(attribution)}).")
             } catch (t: Throwable) {
                 Logger.e("StartupEnrichment: send failure", t)
             } finally {

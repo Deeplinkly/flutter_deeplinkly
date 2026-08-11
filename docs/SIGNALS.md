@@ -1,0 +1,109 @@
+<!-- GENERATED FILE — do not edit. -->
+<!-- Source: tool/signals.json -->
+<!-- Regenerate: dart run tool/gen_signals.dart -->
+
+# Device signals
+
+Every field the SDK may send to `/api/v1/enrich`, and the lowest
+[attribution level](FLUTTER_SDK.md#attribution-levels) at which each still
+ships. Catalogue version 7.
+
+A field absent from this table is never sent, at any level: the SDK drops
+anything it cannot find in the catalogue rather than defaulting to
+permissive.
+
+**Level** — `minimal` also ships at `reduced` and `full`; `reduced` also
+ships at `full`; `full` ships only at `full`. At `none` nothing is sent.
+
+**When** — `static` is collected once per device and cached until the app,
+OS or SDK version changes. `dynamic` is re-read on every send. `identity`
+names the link or user being reported on rather than the device.
+
+## Link identity
+
+| Field | Level | Type | Platforms |
+| --- | --- | --- | --- |
+| `click_id` | minimal | string | both |
+| `code` | minimal | string | both |
+| `custom_user_id` | minimal | string | both |
+| `install_referrer` | minimal | string | android |
+| `source` | minimal | string | both |
+| `fbclid` | reduced | string | both |
+| `gclid` | reduced | string | both |
+| `ttclid` | reduced | string | both |
+| `utm_campaign` | reduced | string | both |
+| `utm_content` | reduced | string | both |
+| `utm_medium` | reduced | string | both |
+| `utm_source` | reduced | string | both |
+| `utm_term` | reduced | string | both |
+
+## Static device profile
+
+| Field | Level | Type | Platforms |
+| --- | --- | --- | --- |
+| `app_build_number` | minimal | string | both |
+| `app_id` | minimal | string | both |
+| `app_version` | minimal | string | both |
+| `deeplinkly_device_id` | minimal | string | both |
+| `install_instance_id` | minimal | string | both |
+| `installed_at` | minimal | datetime | both |
+| `platform` | minimal | string | both |
+| `sdk_version` | minimal | string | both |
+| `static_profile_version` | minimal | string | both |
+| `device_class` | reduced | string | both |
+| `environment` | reduced | string | both |
+| `first_app_version` | reduced | string | both |
+| `first_open_at` | reduced | datetime | both |
+| `google_play_instant` | reduced | bool | android |
+| `install_begin_at` | reduced | datetime | android |
+| `installer_package` | reduced | string | android |
+| `is_emulator` | reduced | bool | both |
+| `is_hardware_id_real` | reduced | bool | both |
+| `os_version` | reduced | string | both |
+| `referrer_click_at` | reduced | datetime | android |
+| `referrer_install_version` | reduced | string | android |
+| `sdk_int` | reduced | int | android |
+| `android_id` | full | string | android |
+| `app_set_id` | full | string | android |
+| `app_set_id_scope` | full | string | android |
+| `brand` | full | string | both |
+| `cpu_abi` | full | string | android |
+| `cpu_type` | full | string | ios |
+| `device` | full | string | android |
+| `device_model` | full | string | both |
+| `hardware_concurrency` | full | int | both |
+| `idfv` | full | string | ios |
+| `manufacturer` | full | string | both |
+| `os_build_id` | full | string | both |
+| `pixel_ratio` | full | float | both |
+| `product` | full | string | android |
+| `screen_dpi` | full | int | both |
+| `screen_height` | full | int | both |
+| `screen_width` | full | int | both |
+| `webview_user_agent` | full | string | both |
+
+## Dynamic signals
+
+| Field | Level | Type | Platforms |
+| --- | --- | --- | --- |
+| `att_status` | minimal | string | ios |
+| `attribution_level` | minimal | string | both |
+| `collected_at` | minimal | datetime | both |
+| `last_opened_at` | minimal | datetime | both |
+| `session_id` | minimal | string | both |
+| `android_reported_at` | reduced | string | android |
+| `connection_type` | reduced | string | both |
+| `ios_reported_at` | reduced | string | ios |
+| `language` | reduced | string | both |
+| `limit_ad_tracking` | reduced | bool | both |
+| `locale` | reduced | string | both |
+| `region` | reduced | string | both |
+| `timezone` | reduced | string | both |
+| `timezone_offset_min` | reduced | int | both |
+| `ui_mode_night` | reduced | bool | both |
+| `unidentified_device` | reduced | bool | both |
+| `advertising_id` | full | string | android |
+| `device_carrier` | full | string | android |
+| `idfa` | full | string | ios |
+| `local_ip` | full | string | both |
+

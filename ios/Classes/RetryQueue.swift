@@ -4,10 +4,21 @@ enum RetryQueue {
     private static let key = "sdk_retry_queue"
     private static let maxCount = 50
 
+    /// How long a queued payload stays worth sending.
+    ///
+    /// Nothing else bounds age: an item is only dropped on a terminal response,
+    /// so a device that stays offline keeps a payload indefinitely and then
+    /// reports its device state as current whenever it comes back.
+    private static let maxItemAge: TimeInterval = 7 * 24 * 60 * 60
+
     // Enqueue payload for retry
     static func enqueue(type: String, payload: [String: Any]) {
         var queue = (UserDefaults.standard.array(forKey: key) as? [String]) ?? []
-        let item: [String: Any] = ["type": type, "payload": payload]
+        let item: [String: Any] = [
+            "type": type,
+            "payload": payload,
+            "queued_at": Date().timeIntervalSince1970,
+        ]
 
         if let data = try? JSONSerialization.data(withJSONObject: item, options: []),
             let jsonString = String(data: data, encoding: .utf8)
@@ -30,6 +41,16 @@ enum RetryQueue {
             queue.remove(at: idx)
             UserDefaults.standard.set(queue, forKey: key)
         }
+    }
+
+    /// Re-applies the current attribution level to a payload built earlier.
+    ///
+    /// Retry items are stored fully assembled and already filtered, so without
+    /// this a level downgrade between queueing and sending would never be
+    /// honoured for anything already in the queue.
+    static func refilter(_ payload: [String: Any]) -> [String: Any] {
+        let level = AttributionLevel.current
+        return payload.filter { SignalCatalogue.allows($0.key, at: level) }
     }
 
     // Retry all items in queue
@@ -60,9 +81,27 @@ enum RetryQueue {
                     continue
                 }
 
+                // A device offline for a month would otherwise replay
+                // month-old device state as current.
+                let queuedAt = obj["queued_at"] as? TimeInterval
+                if let queuedAt = queuedAt,
+                    Date().timeIntervalSince1970 - queuedAt > maxItemAge
+                {
+                    Logger.w("RetryQueue: dropping \(type) past its 7-day TTL")
+                    remove(s)
+                    continue
+                }
+
                 switch type {
                 case "enrichment":
-                    try NetworkUtils.sendEnrichmentNow(payload: payload, apiKey: apiKey)
+                    // Re-filtered against the level in force *now*. The payload
+                    // was built and stored at whatever level applied when it
+                    // was queued, so a user who has since moved from full to
+                    // minimal would otherwise have the original full payload
+                    // sent anyway. This also repairs items already in storage
+                    // from an older SDK.
+                    try NetworkUtils.sendEnrichmentNow(
+                        payload: refilter(payload), apiKey: apiKey)
                 case "error":
                     try NetworkUtils.sendErrorNow(payload: payload, apiKey: apiKey)
                 case "event":

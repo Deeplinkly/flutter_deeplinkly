@@ -58,16 +58,26 @@ class _MyAppState extends State<MyApp> {
       home: MyHomePage(
         title: 'Deeplinkly Example',
         deeplinkData: _deeplinkData,
+        showPasteButton: _deeplinkData == null,
       ),
     );
   }
 }
 
 class MyHomePage extends StatelessWidget {
-  const MyHomePage({super.key, required this.title, this.deeplinkData});
+  const MyHomePage({
+    super.key,
+    required this.title,
+    this.deeplinkData,
+    this.showPasteButton = false,
+  });
 
   final String title;
   final Map<dynamic, dynamic>? deeplinkData;
+
+  /// Whether to offer the deferred-link paste button. Hidden once a link has
+  /// arrived, since there is nothing left to recover.
+  final bool showPasteButton;
 
   String _formatDeeplinkData() {
     if (deeplinkData == null || deeplinkData!.isEmpty) {
@@ -116,6 +126,28 @@ class MyHomePage extends StatelessWidget {
                 ),
               ),
             ),
+            // Deferred deep linking on iOS: a link tapped before the app was
+            // installed is waiting on the pasteboard. A system paste button
+            // recovers it with no "Pasted from…" banner, because the user's tap
+            // is the grant. Renders nothing on Android or iOS below 16.
+            if (showPasteButton) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Tapped a link to get here? Restore it:'),
+                  ),
+                  const SizedBox(width: 8),
+                  DeeplinklyPasteButton(
+                    onPasted: (handled) {
+                      // The link itself arrives on deepLinkStream; this only
+                      // says whether what was pasted was one of ours.
+                      debugPrint('Paste button handled a Deeplinkly link: $handled');
+                    },
+                  ),
+                ],
+              ),
+            ],
             if (deeplinkData != null && deeplinkData!.isNotEmpty) ...[
               const SizedBox(height: 16),
               Card(

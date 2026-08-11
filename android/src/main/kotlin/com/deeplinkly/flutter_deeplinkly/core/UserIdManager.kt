@@ -9,14 +9,9 @@ object UserIdManager {
         DeeplinklyUtils.setCustomUserId(newId)
         Logger.d("UserIdManager: updated custom user ID → ${newId ?: "nil"}")
         SdkRuntime.ioLaunch {
-            val enrichmentData = DeeplinklyUtils.collectEnrichment().toMutableMap()
-            enrichmentData["custom_user_id"] = newId
-            EnrichmentSender.sendOnce(
-                DeeplinklyContext.app,
-                enrichmentData,
-                "custom_user_id",
-                apiKey
-            )
+            // The new id is already stored, so the sender reads it back with
+            // the rest of the payload. Nothing to pass but the source.
+            EnrichmentSender.sendOnce(emptyMap(), "custom_user_id", apiKey)
         }
     }
 }

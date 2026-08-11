@@ -1,5 +1,7 @@
 package com.deeplinkly.flutter_deeplinkly.network
 
+import com.deeplinkly.flutter_deeplinkly.privacy.SignalCatalogue
+import com.deeplinkly.flutter_deeplinkly.privacy.SignalScope
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -35,6 +37,91 @@ class DeeplinklyNetworkTest {
     fun `isTerminalHttp is false for ordinary exceptions`() {
         assertFalse(java.io.IOException("socket closed").isTerminalHttp())
         assertTrue(DeeplinklyHttpException(403, "").isTerminalHttp())
+    }
+
+    // --- resolveUrl -------------------------------------------------------
+
+    /**
+     * Resolving by code makes the backend *create* the ClickEvent, and
+     * create_click_event reads UTMs and ad-click ids straight off request.GET.
+     * They used to be left behind entirely, so every UTM on a link that opened
+     * through a verified App Link was lost.
+     */
+    @Test
+    fun `resolve by code forwards the click-time attribution params`() {
+        val url = DeeplinklyNetwork.resolveUrl(
+            clickId = null,
+            code = "abc123",
+            localParams = mapOf(
+                "utm_source" to "twitter",
+                "utm_campaign" to "spring sale",
+                "gclid" to "XYZ"
+            )
+        )
+
+        assertTrue(url, url.contains("code=abc123"))
+        assertTrue(url, url.contains("utm_source=twitter"))
+        assertTrue(url, url.contains("gclid=XYZ"))
+        // Values are encoded, not pasted in raw.
+        assertTrue(url, url.contains("utm_campaign=spring+sale"))
+    }
+
+    /** The host app's own query parameters are none of the backend's business. */
+    @Test
+    fun `resolve url forwards only attribution params`() {
+        val url = DeeplinklyNetwork.resolveUrl(
+            clickId = "click-1",
+            code = null,
+            localParams = mapOf("utm_source" to "twitter", "auth_token" to "secret")
+        )
+
+        assertTrue(url, url.contains("utm_source=twitter"))
+        assertFalse(url, url.contains("auth_token"))
+        assertFalse(url, url.contains("secret"))
+    }
+
+    /** A click id wins over a code; sending both would be ambiguous. */
+    @Test
+    fun `resolve url prefers the click id`() {
+        val url = DeeplinklyNetwork.resolveUrl("click-1", "abc123")
+        assertTrue(url, url.contains("click_id=click-1"))
+        assertFalse(url, url.contains("code="))
+    }
+
+    @Test
+    fun `resolve url percent-encodes identifiers`() {
+        val url = DeeplinklyNetwork.resolveUrl(clickId = null, code = "a b&c")
+        assertTrue(url, url.contains("code=a+b%26c"))
+    }
+
+    /**
+     * Resolving names the link and nothing else. /resolve has never matched a
+     * click to an install on device signals, so anything describing the device
+     * on this call is shipped for nothing — and at a level the user may have
+     * declined, since the resolve path is not filtered by AttributionLevel.
+     */
+    @Test
+    fun `resolve url carries no device signals`() {
+        val url = DeeplinklyNetwork.resolveUrl(
+            clickId = "click-1",
+            code = null,
+            localParams = mapOf("utm_source" to "twitter")
+        )
+
+        val deviceKeys = SignalCatalogue.keysFor(SignalScope.STATIC) +
+            SignalCatalogue.keysFor(SignalScope.DYNAMIC)
+        for (key in deviceKeys) {
+            assertFalse("$url leaked $key", url.contains("$key="))
+        }
+        assertFalse(url, url.contains("fingerprint"))
+    }
+
+    @Test
+    fun `blank attribution values are dropped rather than sent empty`() {
+        val query = DeeplinklyNetwork.attributionQuery(
+            mapOf("utm_source" to "", "utm_medium" to null, "utm_campaign" to "launch")
+        )
+        assertEquals(mapOf("utm_campaign" to "launch"), query)
     }
 
     // --- generateLinkResult ----------------------------------------------

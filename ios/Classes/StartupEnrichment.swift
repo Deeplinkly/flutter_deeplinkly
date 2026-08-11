@@ -26,11 +26,13 @@ enum StartupEnrichment {
                 // it never appeared at all.
                 Logger.d("StartupEnrichment: no attribution within \(timeout)s; sending anyway")
             }
-            var base = EnrichmentUtils.collect()
-            let attr = AttributionStore.get()
-            for (k, v) in attr { base[k] = v as? String }
+            // Only the first-touch attribution is passed. The device half is
+            // assembled inside the sender, fresh, at send time.
+            var attribution: [String: String?] = [:]
+            for (k, v) in AttributionStore.get() { attribution[k] = v as? String }
             EnrichmentSender.sendOnce(
-                enrichmentData: base, source: "app_start", apiKey: apiKey, force: !ready)
+                attributionData: attribution, source: "app_start", apiKey: apiKey,
+                force: !ready)
             Logger.d("StartupEnrichment: sent.")
         }
     }

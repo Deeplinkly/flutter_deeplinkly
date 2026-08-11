@@ -21,7 +21,22 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Deeplinkly deep link intent filter -->
+            <!-- Deeplinkly App Links. The filter that lets an https link open
+                 the app directly instead of bouncing through the browser.
+                 Verified against /.well-known/assetlinks.json, which Deeplinkly
+                 serves from the package name and signing fingerprint set in the
+                 dashboard. Replace the host with your own link domain. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="https" android:host="example.deeplinkly.com" />
+            </intent-filter>
+
+            <!-- Custom scheme: the browser fallback path, reached via the
+                 intent:// redirect when App Links have not verified. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 

@@ -7,6 +7,7 @@ import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.Assert.*
@@ -42,8 +43,25 @@ class InstallReferrerHandlerTest {
         SdkRuntime.mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
         
         // Clear attribution store
-        com.deeplinkly.flutter_deeplinkly.core.Prefs.of().edit().clear().apply()
+        com.deeplinkly.flutter_deeplinkly.core.Prefs.of().edit().clear().commit()
     }
+
+    /**
+     * Cancels this test's SDK coroutines before the next test starts.
+     *
+     * setUp assigns a fresh ioScope per test, which orphaned the previous
+     * one's jobs rather than stopping them - so a resolve started by an earlier
+     * test could still be in flight and write initial_attribution in the middle
+     * of a later one, which is first-write-wins. That made any test asserting on
+     * a clean AttributionStore order-dependent and intermittently red.
+     */
+    @After
+    fun tearDown() {
+        SdkRuntime.ioScope.cancel()
+        com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue.clearAll()
+        com.deeplinkly.flutter_deeplinkly.core.Prefs.of().edit().clear().commit()
+    }
+
 
     @Test
     fun `checkInstallReferrer processes install referrer with click_id`() {

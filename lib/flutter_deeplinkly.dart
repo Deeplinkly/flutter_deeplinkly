@@ -4,6 +4,35 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_deeplinkly/models/deeplinkly.dart';
 
+export 'package:flutter_deeplinkly/widgets/deeplinkly_paste_button.dart';
+
+/// How much the SDK may report about a device.
+///
+/// Each level is a strict subset of the one above it. Set with
+/// [FlutterDeeplinkly.setAttributionLevel].
+/// Levels gate *reporting* only. Deep links resolve and are delivered to your
+/// app at every level, including [DeeplinklyAttributionLevel.none]: resolving a
+/// link sends its id and nothing describing the device, whatever the level.
+enum DeeplinklyAttributionLevel {
+  /// Everything the SDK collects, including the high-entropy device signals.
+  /// The default.
+  full,
+
+  /// Drops the high-entropy hardware signals — screen geometry, pixel ratio,
+  /// core count, device model, and the Android advertising ID and Android ID.
+  /// Keeps the coarse context campaign reporting actually uses: locale,
+  /// timezone, OS and app version.
+  reduced,
+
+  /// Only what a deep link needs to function: the install's own id, the app
+  /// build, and the link being reported on. Nothing describing the device.
+  minimal,
+
+  /// No enrichment is sent at all. Deep links still resolve and are still
+  /// delivered to your app — this suppresses reporting, not functionality.
+  none,
+}
+
 /// Stream-based deep link controller
 class _DeepLinkController {
   final _controller = StreamController<Map<dynamic, dynamic>>.broadcast();
@@ -273,6 +302,132 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
       await _channel.invokeMethod('setDebugMode', {'enabled': enabled});
     } catch (e) {
       // Silently handle error
+    }
+  }
+
+  /// Restrict how much the SDK may report about this device.
+  ///
+  /// Use this for consent flows that need a middle ground between "track" and
+  /// "don't". Each level is a strict subset of the one above it; see
+  /// [DeeplinklyAttributionLevel]. Defaults to
+  /// [DeeplinklyAttributionLevel.full].
+  ///
+  /// The level persists across launches. To start restricted before any Dart
+  /// runs, set `DeeplinklyAttributionLevel` in `Info.plist` (iOS) or the
+  /// `com.deeplinkly.sdk.attribution_level` manifest meta-data (Android) —
+  /// enrichment can be sent during plugin registration, before this could be
+  /// called.
+  ///
+  /// [setTrackingEnabled] still wins: disabling tracking behaves as
+  /// [DeeplinklyAttributionLevel.none] whatever is set here.
+  static Future<bool> setAttributionLevel(
+    DeeplinklyAttributionLevel level,
+  ) async {
+    try {
+      final ok = await _channel.invokeMethod<bool>('setAttributionLevel', {
+        'level': level.name,
+      });
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// The attribution level currently in force.
+  ///
+  /// Reports [DeeplinklyAttributionLevel.none] when tracking is disabled, even
+  /// if a higher level was set.
+  static Future<DeeplinklyAttributionLevel> getAttributionLevel() async {
+    try {
+      final raw = await _channel.invokeMethod<String>('getAttributionLevel');
+      return DeeplinklyAttributionLevel.values.firstWhere(
+        (l) => l.name == raw,
+        orElse: () => DeeplinklyAttributionLevel.full,
+      );
+    } catch (_) {
+      return DeeplinklyAttributionLevel.full;
+    }
+  }
+
+  /// Turn the automatic pasteboard read on or off.
+  ///
+  /// iOS-only — Android uses the Play Install Referrer and needs no clipboard
+  /// access. The SDK reads the pasteboard once on first launch to recover a
+  /// link tapped before install, and iOS shows its "Pasted from…" banner for
+  /// that read.
+  ///
+  /// **On by default.** The SDK checks whether a URL is on the clipboard
+  /// without reading anything, so a user with plain text or an empty clipboard
+  /// sees no banner. Any URL does trigger it, though — the SDK discards links
+  /// that are not yours only after the prompt has shown.
+  ///
+  /// To turn it **off**, do it in `Info.plist` rather than here — this call
+  /// arrives after plugin registration, by which point the read has already
+  /// happened:
+  ///
+  /// ```xml
+  /// <key>DeeplinklyCheckPasteboardOnInstall</key>
+  /// <false/>
+  /// ```
+  ///
+  /// [DeeplinklyPasteButton] is the no-banner alternative and is unaffected by
+  /// this setting — the user's tap is the grant. Turning the automatic read
+  /// off and shipping the button is a perfectly good configuration.
+  ///
+  /// Turning it **on** from Dart performs the read immediately rather than
+  /// waiting for a next launch the pasteboard may not survive to. Pass
+  /// [checkNow] as `false` to suppress that — useful with
+  /// [willShowPasteboardBanner] if you want to explain the prompt first.
+  ///
+  /// Returns `false` on Android, where there is nothing to enable.
+  static Future<bool> setCheckPasteboardOnInstall(
+    bool enabled, {
+    bool checkNow = true,
+  }) async {
+    try {
+      final ok = await _channel
+          .invokeMethod<bool>('setCheckPasteboardOnInstall', {
+            'enabled': enabled,
+            'check_now': checkNow,
+          });
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Whether reading the pasteboard right now would show the system banner.
+  ///
+  /// True only when the automatic read is enabled, has not already happened,
+  /// tracking is on, and there is plausibly a URL to read. Checking this costs
+  /// nothing and shows no banner itself, so it is safe to call on a first-run
+  /// screen to decide whether to explain the prompt before it appears.
+  ///
+  /// Always false on Android.
+  static Future<bool> willShowPasteboardBanner() async {
+    try {
+      final willShow = await _channel.invokeMethod<bool>(
+        'willShowPasteboardBanner',
+      );
+      return willShow ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Perform the pasteboard read now, if it is enabled and has not run yet.
+  ///
+  /// Pair with [willShowPasteboardBanner] to show your own explanation first.
+  /// Does nothing when the read is disabled or already done.
+  ///
+  /// Always `false` on Android, which has no pasteboard path — the Play
+  /// Install Referrer covers deferred deep linking there.
+  static Future<bool> checkPasteboardNow() async {
+    try {
+      final ok = await _channel.invokeMethod<bool>('checkPasteboardNow');
+      return ok ?? false;
+    } catch (_) {
+      return false;
     }
   }
 

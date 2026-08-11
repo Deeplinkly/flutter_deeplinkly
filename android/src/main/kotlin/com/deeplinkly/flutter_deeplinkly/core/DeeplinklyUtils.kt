@@ -3,30 +3,23 @@ package com.deeplinkly.flutter_deeplinkly.core
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
-import android.util.DisplayMetrics
 import java.text.SimpleDateFormat
 import java.util.*
-import androidx.core.net.toUri
 
 object DeeplinklyUtils {
-    private const val PREFS_NAME = "deeplinkly_prefs"
+    /**
+     * Delegates to [Prefs] rather than opening the file itself.
+     *
+     * It used to call `getSharedPreferences("deeplinkly_prefs", …)` directly —
+     * the same file, reached a second way. That mattered once [Prefs] became
+     * the place the backup-restore check runs: `getOrCreateDeviceId` is one of
+     * the earliest reads in the process, so the one accessor that skipped the
+     * check was also the one most likely to hand back a previous install's
+     * device id before the check could clear it.
+     */
     private val prefs: SharedPreferences
-        get() = DeeplinklyContext.app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    fun markNewSession() {
-        prefs.edit()
-            .putString("dl_session_id", UUID.randomUUID().toString())
-            .putBoolean("dl_sent_enrichment_this_session", false)
-            .apply()
-    }
-
-    fun getSessionId(): String? = prefs.getString("dl_session_id", null)
-    fun wasSessionEnrichmentSent(): Boolean = prefs.getBoolean("dl_sent_enrichment_this_session", false)
-    fun markSessionEnrichmentSent() = prefs.edit().putBoolean("dl_sent_enrichment_this_session", true).apply()
+        get() = Prefs.of()
 
     private const val CUSTOM_USER_ID_KEY = "custom_user_id"
     private const val LEGACY_CUSTOM_USER_ID_KEY = "dl_custom_user_id"
@@ -47,10 +40,14 @@ object DeeplinklyUtils {
 
     fun setCustomUserId(id: String?) = prefs.edit().putString(CUSTOM_USER_ID_KEY, id).apply()
 
-    fun isTrackingDisabled(): Boolean = prefs.getBoolean("tracking_disabled", false)
-    fun setTrackingDisabled(disabled: Boolean) {
-        prefs.edit().putBoolean("tracking_disabled", disabled).apply()
-    }
+    /**
+     * Delegates rather than reading the pref itself. There were two
+     * implementations of this over the same key, which is one more than can
+     * stay correct.
+     */
+    fun isTrackingDisabled(): Boolean =
+        com.deeplinkly.flutter_deeplinkly.privacy.TrackingPreferences.isTrackingDisabled()
+
     inline fun guardTracking(block: () -> Unit) {
         if (!isTrackingDisabled()) block()
     }
@@ -62,132 +59,8 @@ object DeeplinklyUtils {
         }
     }
 
-    fun collectEnrichment(): Map<String, String?> {
-        val ctx = DeeplinklyContext.app
-        val out = mutableMapOf<String, String?>()
-        out["deeplinkly_device_id"] = getOrCreateDeviceId()
-        out["custom_user_id"] = getCustomUserId()
-        out.putAll(collectFingerprint())
-
-        val pm = ctx.packageManager
-        val pkg = ctx.packageName
-        val versionInfo = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
-            else
-                @Suppress("DEPRECATION") pm.getPackageInfo(pkg, 0)
-        } catch (_: Exception) {
-            null
-        }
-
-        val versionCode = versionInfo?.let {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) it.longVersionCode.toString()
-            else @Suppress("DEPRECATION") it.versionCode.toString()
-        }
-
-        guardTracking {
-            try {
-                val info = com.google.android.gms.ads.identifier.AdvertisingIdClient.getAdvertisingIdInfo(ctx)
-                if (!info.isLimitAdTrackingEnabled) {
-                    out["advertising_id"] = info.id
-                    prefs.edit().putString("advertising_id", info.id).apply()
-                }
-            } catch (_: Exception) {
-            }
-        }
-
-        val config = ctx.resources.configuration
-        val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-            config.locales[0] else @Suppress("DEPRECATION") config.locale
-
-        val androidId = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ANDROID_ID)
-        val installer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-            runCatching { pm.getInstallSourceInfo(pkg).installingPackageName }.getOrNull()
-        else @Suppress("DEPRECATION") pm.getInstallerPackageName(pkg)
-
-        out += mapOf(
-            "app_id" to pkg,
-            "android_id" to androidId,
-            "manufacturer" to Build.MANUFACTURER,
-            "brand" to Build.BRAND,
-            "device" to Build.DEVICE,
-            "product" to Build.PRODUCT,
-            "sdk_int" to Build.VERSION.SDK_INT.toString(),
-            "os_version" to Build.VERSION.RELEASE,
-            "platform" to "android",
-            "device_model" to Build.MODEL,
-            "installer_package" to installer,
-            "app_version" to versionInfo?.versionName,
-            "app_build_number" to versionCode,
-            "locale" to if (Build.VERSION.SDK_INT >= 21) locale.toLanguageTag() else locale.toString(),
-            "language" to locale.language,
-            "region" to locale.country,
-            "timezone" to TimeZone.getDefault().id
-        )
-
-        return out
-    }
-
-    private fun collectFingerprint(): Map<String, String?> {
-        val ctx = DeeplinklyContext.app
-        val metrics: DisplayMetrics = ctx.resources.displayMetrics
-        val screenWidth = metrics.widthPixels
-        val screenHeight = metrics.heightPixels
-        val pixelRatio = metrics.density
-        val now = System.currentTimeMillis()
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-        sdf.timeZone = TimeZone.getTimeZone("UTC")
-        val hardwareConcurrency = Runtime.getRuntime().availableProcessors()
-        val base = mutableMapOf(
-            "screen_width" to screenWidth.toString(),
-            "screen_height" to screenHeight.toString(),
-            "pixel_ratio" to pixelRatio.toString(),
-            "hardware_concurrency" to hardwareConcurrency.toString(),
-            "last_opened_at" to sdf.format(Date(now)),
-            "hardware_fingerprint" to makeFingerprint(screenWidth, screenHeight, pixelRatio)
-        )
-        val pkgInfo = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                ctx.packageManager.getPackageInfo(ctx.packageName, PackageManager.PackageInfoFlags.of(0))
-            else
-                @Suppress("DEPRECATION") ctx.packageManager.getPackageInfo(ctx.packageName, 0)
-        } catch (_: Exception) {
-            null
-        }
-        val installTime = pkgInfo?.firstInstallTime ?: now
-        base["installed_at"] = sdf.format(Date(installTime))
-        return base
-    }
-
-    private fun makeFingerprint(w: Int, h: Int, pr: Float): String {
-        val parts = listOf(Build.MANUFACTURER, Build.MODEL, Build.VERSION.RELEASE, "$w", "$h", "$pr")
-        return parts.joinToString("|").hashCode().toString(16)
-    }
-
-    fun getAppLinkHosts(): List<String> {
-        val ctx = DeeplinklyContext.app
-        val pm = ctx.packageManager
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-            addCategory(android.content.Intent.CATEGORY_BROWSABLE)
-            data = Uri.parse("https://example.com")
-        }
-        val infos = pm.queryIntentActivities(intent, PackageManager.GET_RESOLVED_FILTER)
-        val hosts = mutableSetOf<String>()
-        for (info in infos) {
-            if (info.activityInfo.packageName != ctx.packageName) continue
-            val filter = info.filter ?: continue
-            val isAppLink = filter.hasAction(android.content.Intent.ACTION_VIEW)
-                    && filter.hasCategory(android.content.Intent.CATEGORY_DEFAULT)
-                    && filter.hasCategory(android.content.Intent.CATEGORY_BROWSABLE)
-            if (!isAppLink) continue
-            for (i in 0 until filter.countDataSchemes()) {
-                if (filter.getDataScheme(i) != "https") continue
-                for (j in 0 until filter.countDataAuthorities()) {
-                    val host = filter.getDataAuthority(j)?.host
-                    if (!host.isNullOrBlank()) hosts.add(host)
-                }
-            }
-        }
-        return hosts.toList()
-    }
+    // There is deliberately no collectEnrichment() here any more. Assembling a
+    // payload happens in exactly one place — EnrichmentSender — from
+    // DeviceProfile plus DynamicSignals. A second assembly path is how the two
+    // platforms drifted apart in the first place.
 }

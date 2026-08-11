@@ -85,11 +85,37 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("org.robolectric:robolectric:4.14.1")
+    // Bundled: deferred deep linking does not work without it, and its AAR
+    // declares no permissions of its own.
     implementation 'com.android.installreferrer:installreferrer:2.2'
-    implementation 'com.google.android.gms:play-services-ads-identifier:18.2.0'
+
+    // NOT bundled, deliberately. This library's own AAR manifest declares
+    // com.google.android.gms.permission.AD_ID, so depending on it normally
+    // merges that permission into every host app — including apps under Play's
+    // Families policy, which may not collect an advertising ID at all. Marking
+    // it compileOnly means the library is never packaged, its manifest is never
+    // merged, and a host app opts in by adding the dependency itself:
+    //
+    //     implementation 'com.google.android.gms:play-services-ads-identifier:18.2.0'
+    //
+    // DynamicSignals guards every use with Dependencies.classExists, so an app
+    // that does not opt in simply reports no advertising_id. Same approach
+    // Branch takes for this and its other optional integrations.
+    compileOnly 'com.google.android.gms:play-services-ads-identifier:18.2.0'
+    testImplementation 'com.google.android.gms:play-services-ads-identifier:18.2.0'
+
+    // App Set ID: a per-developer device id that, unlike the advertising id,
+    // survives ad-tracking opt-out because it may not be used for advertising.
+    // Bundled — its AAR declares no permissions.
+    implementation 'com.google.android.gms:play-services-appset:16.1.0'
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.0'
-    implementation "androidx.work:work-runtime-ktx:2.10.3"
+    // androidx.work is deliberately absent. It was declared but never used —
+    // there is no Worker, no WorkRequest, no WorkManager call anywhere in the
+    // SDK — while its manifest merged four permissions into every host app:
+    // WAKE_LOCK, ACCESS_NETWORK_STATE, RECEIVE_BOOT_COMPLETED and
+    // FOREGROUND_SERVICE. Retrying is handled by SdkRetryQueue and
+    // QueueProcessor, both of which run in-process.
     implementation "androidx.core:core-ktx:1.12.0"
     
     // Flutter embedding dependencies
@@ -98,6 +124,8 @@ dependencies {
     def flutterJar = "$flutterRoot/bin/cache/artifacts/engine/android-arm/flutter.jar"
     if (file(flutterJar).exists()) {
         compileOnly files(flutterJar)
+        testCompileOnly files(flutterJar)
+        testRuntimeOnly files(flutterJar)
     } else {
         // Try alternative location
         def altFlutterJar = "$flutterRoot/bin/cache/artifacts/engine/android/flutter.jar"

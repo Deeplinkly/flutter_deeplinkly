@@ -2,6 +2,7 @@ package com.deeplinkly.flutter_deeplinkly.storage
 
 import org.json.JSONObject
 import com.deeplinkly.flutter_deeplinkly.core.Prefs
+import com.deeplinkly.flutter_deeplinkly.network.optStringOrNull
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -58,43 +59,18 @@ object AttributionStore {
         }
     }
     
-    /**
-     * Save and merge with existing attribution (thread-safe)
-     */
-    fun saveAndMerge(map: Map<String, String?>) {
-        lock.withLock {
-            val prefs = Prefs.of()
-            val existing = get()
-            val merged = mutableMapOf<String, String?>()
-            
-            // Add existing attribution
-            existing.forEach { (key, value) ->
-                merged[key] = value
-            }
-            
-            // Merge with new data (new data takes precedence for non-null values)
-            map.forEach { (key, value) ->
-                if (value != null) {
-                    merged[key] = value
-                }
-            }
-            
-            val json = JSONObject(merged.filterValues { it != null }).toString()
-            prefs.edit().putString(KEY, json).apply()
-            
-            // Notify listeners
-            val attribution = get()
-            notifyListeners(attribution)
-        }
-    }
-
     fun get(): Map<String, String> {
         val prefs = Prefs.of()
         val raw = prefs.getString(KEY, null) ?: return emptyMap()
         return try {
             val obj = JSONObject(raw)
             buildMap {
-                obj.keys().forEach { k -> put(k, obj.optString(k, "")) }
+                // optStringOrNull, not optString(k, ""): on Android the latter
+                // answers the literal string "null" for a JSON null, so a null
+                // that reached storage would come back as attribution reading
+                // `utm_source == "null"` - true for every isNullOrBlank check
+                // the SDK and the host app make.
+                obj.keys().forEach { k -> obj.optStringOrNull(k)?.let { put(k, it) } }
             }
         } catch (_: Exception) { emptyMap() }
     }

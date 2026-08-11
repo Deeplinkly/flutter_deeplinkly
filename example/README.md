@@ -10,10 +10,11 @@ flutter pub get
 flutter run
 ```
 
-`lib/main.dart` initializes the SDK and subscribes to
-`FlutterDeeplinkly.instance.deepLinkStream`, printing every payload it receives.
-That is the whole app — it is a harness for the link paths, not a tour of the
-API. For the attribution, identity, event, and link-generation APIs, see the
+`lib/main.dart` initializes the SDK, subscribes to
+`FlutterDeeplinkly.instance.deepLinkStream` and prints every payload it
+receives, and shows a `DeeplinklyPasteButton` until a link arrives. That is the
+whole app — it is a harness for the link paths, not a tour of the API. For the
+attribution, identity, event, and link-generation APIs, see the
 [SDK documentation](../docs/FLUTTER_SDK.md).
 
 ## What is already wired up
@@ -57,11 +58,15 @@ API. For the attribution, identity, event, and link-generation APIs, see the
 Deferred deep linking on iOS goes through the pasteboard and **cannot be tested
 on the Simulator** — there is no App Store there. On a physical device without
 the app installed: open a link in Safari, tap through the interstitial (there is
-no auto-redirect, by design), install, and launch. The link should arrive on
-`deepLinkStream` with its original UTM parameters.
+no auto-redirect, by design), install, and launch. Tap the **Paste** button on
+the home screen; the link should arrive on `deepLinkStream` with its original
+UTM parameters, and no "Pasted from Safari" banner should appear.
 
-The read is once-per-install and clears the pasteboard, so **reinstall** to
-retest — relaunching will not repeat it.
+The example deliberately does **not** set `DeeplinklyCheckPasteboardOnInstall`,
+so the automatic read is off — that is the default since 1.9.0, and the paste
+button is the better path. To exercise the automatic read instead, add the key
+to `ios/Runner/Info.plist`. That read is once-per-install and clears the
+pasteboard, so **reinstall** to retest — relaunching will not repeat it.
 
 On Android, the Install Referrer API only works for builds delivered by Play, so
 test through internal testing rather than a sideloaded APK.

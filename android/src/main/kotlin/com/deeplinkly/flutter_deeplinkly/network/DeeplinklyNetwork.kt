@@ -1,7 +1,10 @@
 package com.deeplinkly.flutter_deeplinkly.network
 
 import com.deeplinkly.flutter_deeplinkly.core.DeeplinklyUtils
+import com.deeplinkly.flutter_deeplinkly.core.DeviceProfile
+import com.deeplinkly.flutter_deeplinkly.core.DynamicSignals
 import com.deeplinkly.flutter_deeplinkly.core.Logger
+import com.deeplinkly.flutter_deeplinkly.privacy.AttributionLevel
 import com.deeplinkly.flutter_deeplinkly.core.SdkRuntime
 import com.deeplinkly.flutter_deeplinkly.privacy.TrackingPreferences
 import com.deeplinkly.flutter_deeplinkly.retry.SdkRetryQueue
@@ -11,6 +14,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
@@ -53,6 +57,18 @@ internal fun JSONObject.toValueMap(): Map<String, Any?> {
 internal fun JSONArray.toValueList(): List<Any?> =
     (0 until length()).map { index -> unwrapJsonValue(opt(index)) }
 
+/**
+ * Reads an optional string, answering null for a missing key or a JSON null.
+ *
+ * `optString(key, null)` is not a safe substitute: it hands back the fallback as
+ * a platform type, so `optString(key, null).takeIf { it.isNotBlank() }` throws
+ * NullPointerException on the very keys it is meant to tolerate. And the
+ * one-argument `optString(key)` answers the literal string "null" for a JSON
+ * null on Android.
+ */
+internal fun JSONObject.optStringOrNull(key: String): String? =
+    if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
+
 private fun unwrapJsonValue(value: Any?): Any? = when (value) {
     JSONObject.NULL, null -> null
     is JSONObject -> value.toValueMap()
@@ -68,10 +84,6 @@ object DeeplinklyNetwork {
 
     /** Backend /log-event returns 200 for accepted payloads; treat full 2xx as success. */
     private fun isHttpSuccess(code: Int) = code in 200..299
-
-    /** optString() answers the literal string "null" for a JSON null on Android. */
-    private fun JSONObject.optStringOrNull(key: String): String? =
-        if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
 
     /**
      * Recursively converts a Kotlin map to a JSONObject.
@@ -231,6 +243,49 @@ object DeeplinklyNetwork {
     )
 
     /**
+     * The click-time attribution params worth forwarding to /resolve.
+     *
+     * Only the keys the backend actually reads (_get_utm and
+     * _get_tracking_param in links/views.py). The link's other query parameters
+     * are the host app's own data and have no business being recorded against
+     * the click.
+     */
+    internal fun attributionQuery(localParams: Map<String, String?>): Map<String, String> =
+        ATTRIBUTION_KEYS.mapNotNull { key ->
+            localParams[key]?.takeIf { it.isNotBlank() }?.let { key to it }
+        }.toMap()
+
+    private fun encodeQuery(params: Map<String, String>): String =
+        params.entries.joinToString("&") { (k, v) ->
+            "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}"
+        }
+
+    /**
+     * Builds a GET /resolve URL.
+     *
+     * Two things this centralises. The click id and code are percent-encoded
+     * rather than pasted in raw, which they were at all three call sites. And
+     * the click-time attribution params ride along: resolving by `code` makes
+     * the backend *create* the ClickEvent (an App Link opened the app directly,
+     * so the server never saw the click), and create_click_event reads UTMs and
+     * ad-click ids off request.GET. Without them, every UTM on a link that
+     * opened through a verified App Link was dropped on the floor.
+     */
+    fun resolveUrl(
+        clickId: String?,
+        code: String?,
+        localParams: Map<String, String?> = emptyMap()
+    ): String {
+        val query = linkedMapOf<String, String>()
+        when {
+            clickId != null -> query["click_id"] = clickId
+            code != null -> query["code"] = code
+        }
+        query.putAll(attributionQuery(localParams))
+        return "$RESOLVE_CLICK_ENDPOINT?${encodeQuery(query)}"
+    }
+
+    /**
      * Builds the normalized attribution snapshot persisted by AttributionStore.
      *
      * The backend nests UTM and ad-click params inside "params" (click-time values
@@ -262,57 +317,6 @@ object DeeplinklyNetwork {
         return out
     }
 
-    fun resolveWithFingerprint(
-        clickId: String?,
-        code: String?,
-        fingerprint: Map<String, Any?>,
-        apiKey: String
-    ): Pair<String, JSONObject> {
-        val body = JSONObject().apply {
-            clickId?.let { put("click_id", it) }
-            code?.let { put("code", it) }
-            put("fingerprint", JSONObject(fingerprint.filterValues { it != null }))
-        }
-        val conn = openConnection(RESOLVE_CLICK_ENDPOINT, apiKey, "POST").apply {
-            setRequestProperty("Accept", "application/json")
-        }
-        conn.outputStream.use { it.write(body.toString().toByteArray(StandardCharsets.UTF_8)) }
-        val responseCode = conn.responseCode
-        val responseBody = if (isHttpSuccess(responseCode)) {
-            conn.inputStream.bufferedReader().readText()
-        } else {
-            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: ""
-            throw DeeplinklyHttpException(responseCode, errorBody)
-        }
-        return responseBody to JSONObject(responseBody)
-    }
-
-    suspend fun resolveWithFingerprintWithRetry(
-        clickId: String?,
-        code: String?,
-        fingerprint: Map<String, Any?>,
-        apiKey: String,
-        maxRetries: Int = 3,
-        initialDelayMs: Long = 100
-    ): Pair<String, JSONObject> = withContext(Dispatchers.IO) {
-        var lastException: Exception? = null
-        var delayMs = initialDelayMs
-        repeat(maxRetries) { attempt ->
-            try {
-                return@withContext resolveWithFingerprint(clickId, code, fingerprint, apiKey)
-            } catch (e: Exception) {
-                lastException = e
-                if (e.isTerminalHttp()) throw e
-                if (attempt < maxRetries - 1) {
-                    kotlinx.coroutines.delay(delayMs)
-                    Logger.w("resolveWithFingerprint retry ${attempt + 1}/$maxRetries after ${delayMs}ms")
-                    delayMs *= 2
-                }
-            }
-        }
-        throw lastException ?: Exception("Failed to resolve after $maxRetries attempts")
-    }
-
     fun sendEnrichment(data: Map<String, String?>, apiKey: String) {
         if (TrackingPreferences.isTrackingDisabled()) return
         val payload = JSONObject(data.filterValues { it != null })
@@ -341,6 +345,12 @@ object DeeplinklyNetwork {
         val payload = JSONObject().apply {
             put("event_name", eventName)
             put("parameters", toJsonObject(parameters))
+            // A sibling of "parameters", never inside it: parameters is what
+            // the tenant reads in their dashboard, and its values are truncated
+            // at 256 chars and capped at 25 keys. Nesting is safe here because
+            // this body is built fresh at the call site and never stored as a
+            // flat map, unlike /enrich.
+            deviceBlock()?.let { put("device", it) }
         }
         return try {
             val response = doPost(DomainConfig.LOG_EVENT_ENDPOINT, payload.toString(), apiKey)
@@ -349,6 +359,28 @@ object DeeplinklyNetwork {
             Logger.e("logEvent failed, queueing", e)
             SdkRetryQueue.enqueue(payload, "event")
             false
+        }
+    }
+
+    /**
+     * The device state to report alongside an event, filtered to the current
+     * attribution level.
+     *
+     * Null at level `none`, where nothing describing the device may be sent —
+     * the event itself still goes, since level gates reporting rather than
+     * functionality.
+     */
+    private fun deviceBlock(): JSONObject? {
+        val level = AttributionLevel.current
+        if (!level.allowsEnrichment) return null
+        return try {
+            val signals = DynamicSignals.assemble(DeviceProfile.get())
+            val filtered = level.filter(signals).filterValues { it != null }
+            if (filtered.isEmpty()) null else JSONObject(filtered)
+        } catch (e: Exception) {
+            // An event is worth sending even if the device half fails.
+            Logger.w("Could not build the event device block: ${e.message}")
+            null
         }
     }
 

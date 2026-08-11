@@ -8,6 +8,7 @@ import com.deeplinkly.flutter_deeplinkly.helpers.TestIntentBuilder
 import com.deeplinkly.flutter_deeplinkly.storage.AttributionStore
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.Assert.*
@@ -40,8 +41,25 @@ class DeepLinkHandlerTest {
         SdkRuntime.mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
         
         // Clear attribution store
-        com.deeplinkly.flutter_deeplinkly.core.Prefs.of().edit().clear().apply()
+        com.deeplinkly.flutter_deeplinkly.core.Prefs.of().edit().clear().commit()
     }
+
+    /**
+     * Cancels this test's SDK coroutines before the next test starts.
+     *
+     * setUp assigns a fresh ioScope per test, which orphaned the previous
+     * one's jobs rather than stopping them - so a resolve started by an earlier
+     * test could still be in flight and write initial_attribution in the middle
+     * of a later one, which is first-write-wins. That made any test asserting on
+     * a clean AttributionStore order-dependent and intermittently red.
+     */
+    @After
+    fun tearDown() {
+        SdkRuntime.ioScope.cancel()
+        com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue.clearAll()
+        com.deeplinkly.flutter_deeplinkly.core.Prefs.of().edit().clear().commit()
+    }
+
 
     @Test
     fun `handleIntent processes intent with click_id`() {
@@ -175,6 +193,114 @@ class DeepLinkHandlerTest {
         // Deep link should be queued for later delivery
         // Verify no crash occurred
         assertTrue(true)
+    }
+
+    /**
+     * Android hands back the original VIEW intent when it restarts a killed
+     * process from Recents, which replayed the deep link that opened the app.
+     */
+    @Test
+    fun `handleIntent ignores an intent relaunched from history`() {
+        com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue.clearAll()
+
+        val intent = TestIntentBuilder.createClickIdIntent("history_click").apply {
+            addFlags(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)
+        }
+
+        DeepLinkHandler.handleIntent(context, intent, mockChannel, apiKey)
+
+        Thread.sleep(200)
+
+        // Scoped to this click id: the resolves other tests leave in flight land
+        // in the same SharedPreferences after their own test has finished.
+        assertTrue(
+            "a replayed launch intent must not start a resolve",
+            com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue.getResolveQueue()
+                .none { it.clickId == "history_click" }
+        )
+        assertFalse(
+            "a skipped intent must not be marked consumed",
+            intent.getBooleanExtra("com.deeplinkly.sdk.intent_consumed", false)
+        )
+    }
+
+    /** The in-process half of the same guard: one intent, one delivery. */
+    @Test
+    fun `handleIntent marks an intent it processed so a re-attach skips it`() {
+        val intent = TestIntentBuilder.createClickIdIntent("consumed_click")
+
+        DeepLinkHandler.handleIntent(context, intent, mockChannel, apiKey)
+
+        assertTrue(
+            "a processed intent must be marked so the next attach skips it",
+            intent.getBooleanExtra("com.deeplinkly.sdk.intent_consumed", false)
+        )
+    }
+
+    // --- what counts as a Deeplinkly link ---------------------------------
+
+    private fun queuedFor(clickIdOrCode: String) =
+        com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue.getResolveQueue()
+            .any { it.clickId == clickIdOrCode || it.code == clickIdOrCode }
+
+    /**
+     * An app's own custom-scheme route is not a Deeplinkly link. This used to
+     * be resolved as code "notifications", come back 404 - which is terminal -
+     * and deliver a fallback, so opening an in-app screen fired onDeepLink.
+     */
+    @Test
+    fun `a custom scheme route is not treated as a short code`() {
+        com.deeplinkly.flutter_deeplinkly.queue.DeepLinkQueue.clearAll()
+
+        val intent = Intent(
+            Intent.ACTION_VIEW,
+            android.net.Uri.parse("myapp://settings/notifications")
+        )
+
+        DeepLinkHandler.handleIntent(context, intent, mockChannel, apiKey)
+        Thread.sleep(300)
+
+        assertFalse(
+            "an app's own custom-scheme route must not be resolved as a code",
+            queuedFor("notifications")
+        )
+        assertFalse(
+            "a skipped intent must not be marked consumed",
+            intent.getBooleanExtra("com.deeplinkly.sdk.intent_consumed", false)
+        )
+    }
+
+    /** The backend's intent:// fallback is matched on its click_id, not a path. */
+    @Test
+    fun `a custom scheme link carrying a click id is still handled`() {
+        val intent = Intent(
+            Intent.ACTION_VIEW,
+            android.net.Uri.parse("deeplinkly://open?click_id=custom_scheme_click")
+        )
+
+        DeepLinkHandler.handleIntent(context, intent, mockChannel, apiKey)
+
+        assertTrue(
+            "a click_id is a Deeplinkly link whatever the scheme",
+            intent.getBooleanExtra("com.deeplinkly.sdk.intent_consumed", false)
+        )
+    }
+
+    /**
+     * The App Link bypass: the OS routes https://<link domain>/<code> straight
+     * to the app, so the backend never saw the click and the code is the only
+     * thing we have to resolve on.
+     */
+    @Test
+    fun `an https app link is still read as a short code`() {
+        val intent = TestIntentBuilder.createCodeIntent(code = "abc123")
+
+        DeepLinkHandler.handleIntent(context, intent, mockChannel, apiKey)
+
+        assertTrue(
+            "the App Link bypass must keep working",
+            intent.getBooleanExtra("com.deeplinkly.sdk.intent_consumed", false)
+        )
     }
 
     @Test

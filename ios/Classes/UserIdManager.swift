@@ -18,10 +18,10 @@ enum UserIdManager {
         // to do with attribution, so it must not be gated on a UTM being
         // present — a user who installed the app organically would otherwise
         // never be linked at all.
-        var enrichmentData = EnrichmentUtils.collect()
-        enrichmentData["custom_user_id"] = newId
+        // The new id is already stored, so the sender reads it back with the
+        // rest of the payload. Nothing to pass but the source.
         EnrichmentSender.sendOnce(
-            enrichmentData: enrichmentData,
+            attributionData: [:],
             source: "custom_user_id",
             apiKey: apiKey,
             force: true

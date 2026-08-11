@@ -11,6 +11,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
 class AttributionStoreTest {
@@ -65,49 +66,6 @@ class AttributionStoreTest {
     }
 
     @Test
-    fun `saveAndMerge merges with existing attribution`() {
-        val firstAttribution = mapOf(
-            "source" to "deep_link",
-            "click_id" to "first_click",
-            "utm_source" to "google"
-        )
-        
-        val secondAttribution = mapOf(
-            "utm_medium" to "cpc",
-            "utm_campaign" to "test"
-        )
-
-        AttributionStore.saveOnce(firstAttribution.mapValues { it.value })
-        AttributionStore.saveAndMerge(secondAttribution.mapValues { it.value })
-
-        val saved = AttributionStore.get()
-        assertEquals("first_click", saved["click_id"])
-        assertEquals("google", saved["utm_source"])
-        assertEquals("cpc", saved["utm_medium"])
-        assertEquals("test", saved["utm_campaign"])
-    }
-
-    @Test
-    fun `saveAndMerge overwrites existing values with new non-null values`() {
-        val firstAttribution = mapOf(
-            "utm_source" to "google",
-            "utm_medium" to "organic"
-        )
-        
-        val secondAttribution = mapOf(
-            "utm_source" to "facebook",
-            "utm_medium" to "social"
-        )
-
-        AttributionStore.saveOnce(firstAttribution.mapValues { it.value })
-        AttributionStore.saveAndMerge(secondAttribution.mapValues { it.value })
-
-        val saved = AttributionStore.get()
-        assertEquals("facebook", saved["utm_source"])
-        assertEquals("social", saved["utm_medium"])
-    }
-
-    @Test
     fun `get returns empty map when no attribution exists`() {
         val attribution = AttributionStore.get()
         assertTrue(attribution.isEmpty())
@@ -133,7 +91,13 @@ class AttributionStoreTest {
     fun `saveOnce is thread-safe`() = runBlocking {
         val threads = 10
         val latch = CountDownLatch(threads)
-        var successCount = 0
+        // Atomic, because this is counted from all ten threads. A plain `var`
+        // here was itself the data race the test exists to rule out, and it
+        // duly lost increments — reliably enough to fail once Prefs started
+        // taking a lock on first use, which releases the threads in a burst
+        // rather than letting them straggle. The failure was always available;
+        // it just needed the threads to line up.
+        val successCount = AtomicInteger(0)
 
         repeat(threads) { index ->
             Thread {
@@ -143,7 +107,7 @@ class AttributionStoreTest {
                         "click_id" to "click_$index"
                     )
                     AttributionStore.saveOnce(attribution.mapValues { it.value })
-                    successCount++
+                    successCount.incrementAndGet()
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
@@ -152,13 +116,13 @@ class AttributionStoreTest {
             }.start()
         }
 
-        latch.await(5, TimeUnit.SECONDS)
+        assertTrue("threads did not finish within 5s", latch.await(5, TimeUnit.SECONDS))
 
         val saved = AttributionStore.get()
         // Only one should succeed (saveOnce semantics)
         assertTrue(saved.isNotEmpty())
         // Verify no crashes occurred
-        assertEquals(threads, successCount)
+        assertEquals(threads, successCount.get())
     }
 
     @Test
@@ -189,29 +153,21 @@ class AttributionStoreTest {
         AttributionStore.removeListener(listener)
     }
 
+    /**
+     * optString(key, "") answers the literal string "null" for a JSON null on
+     * Android, so a null that reached storage came back as attribution reading
+     * utm_source == "null" - non-blank, and therefore true for every
+     * isNullOrBlank check the SDK and the host app make.
+     */
     @Test
-    fun `listeners are notified on saveAndMerge`() {
-        var notified = false
+    fun `a json null is absent rather than the string null`() {
+        com.deeplinkly.flutter_deeplinkly.core.Prefs.of().edit()
+            .putString("initial_attribution", """{"source":"deep_link","utm_source":null}""")
+            .commit()
 
-        val listener: (Map<String, String>) -> Unit = { _ ->
-            notified = true
-        }
+        val attribution = AttributionStore.get()
 
-        AttributionStore.addListener(listener)
-
-        val firstAttribution = mapOf("click_id" to "first")
-        AttributionStore.saveOnce(firstAttribution.mapValues { it.value })
-
-        notified = false
-
-        val secondAttribution = mapOf("utm_source" to "google")
-        AttributionStore.saveAndMerge(secondAttribution.mapValues { it.value })
-
-        Thread.sleep(100)
-
-        assertTrue(notified)
-
-        AttributionStore.removeListener(listener)
+        assertEquals("deep_link", attribution["source"])
+        assertNull("a JSON null must not surface as \"null\"", attribution["utm_source"])
     }
 }
-

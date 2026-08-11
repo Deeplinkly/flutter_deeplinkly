@@ -85,21 +85,28 @@ enum NetworkUtils {
         }.resume()
     }
 
+    /// - Parameter localParams: the query parameters off the link that was
+    ///   opened. Only the catalogued attribution keys are forwarded; see
+    ///   `resolveURL` for why they travel on the query string.
     static func resolveClick(
         clickId: String?,
         code: String?,
-        fingerprint: [String: Any],
         apiKey: String,
+        localParams: [String: String] = [:],
         onSuccess: @escaping ([String: Any]) -> Void,
         // Carries the Error rather than a message: the caller needs the status
         // code to tell a retryable failure from a rejected one (isTerminal).
         onError: @escaping (Error) -> Void
     ) {
-        var body: [String: Any] = ["fingerprint": fingerprint]
+        // The body carries the link identity and nothing else. There is no
+        // `fingerprint` key: the endpoint never read one, and sending it meant
+        // describing the user's device on a call that had no use for it.
+        var body: [String: Any] = [:]
         if let c = clickId { body["click_id"] = c }
         if let c = code { body["code"] = c }
 
-        request(DomainConfig.resolveClick, method: "POST", apiKey: apiKey, body: body) { result in
+        let url = resolveURL(localParams: localParams)
+        request(url, method: "POST", apiKey: apiKey, body: body) { result in
             switch result {
             case .success(let json):
                 onSuccess(json)
@@ -107,6 +114,60 @@ enum NetworkUtils {
                 onError(err)
             }
         }
+    }
+
+    /// The click-time attribution params worth forwarding to /resolve.
+    ///
+    /// Only the keys the backend actually reads (`_get_utm` and
+    /// `_get_tracking_param` in links/views.py). The link's other query
+    /// parameters are the host app's own data and have no business being
+    /// recorded against the click.
+    static func attributionQuery(_ localParams: [String: String]) -> [String: String] {
+        var out: [String: String] = [:]
+        for key in attributionKeys {
+            if let value = localParams[key], !value.isEmpty { out[key] = value }
+        }
+        return out
+    }
+
+    /// Builds the /resolve URL, carrying click-time attribution on the query
+    /// string.
+    ///
+    /// The query string, not the JSON body, and that is not a style choice.
+    /// Resolving by `code` makes the backend *create* the ClickEvent — an App
+    /// Link or Universal Link opened the app directly, so the server never saw
+    /// the click — and `create_click_event` reads UTMs and ad-click ids off
+    /// `request.GET`. It never consults the POST body, which is parsed only for
+    /// `click_id` and `code`. Sending them in the body would look right and
+    /// drop every one of them.
+    ///
+    /// Until this existed iOS sent no attribution params at all, so every UTM
+    /// on a link that opened through a verified Universal Link was lost.
+    /// Android has forwarded them since `resolveUrl`.
+    static func resolveURL(localParams: [String: String]) -> String {
+        let query = attributionQuery(localParams)
+        guard !query.isEmpty,
+            var components = URLComponents(string: DomainConfig.resolveClick)
+        else { return DomainConfig.resolveClick }
+
+        // Sorted so the URL is deterministic — dictionary order is not, and an
+        // unstable URL is untestable and defeats any caching in between.
+        components.queryItems = query.sorted { $0.key < $1.key }
+            .map { URLQueryItem(name: $0.key, value: $0.value) }
+
+        // URLComponents does not encode "+" in a query value, and Django's
+        // QueryDict decodes a bare "+" as a space. So `utm_campaign=a+b` would
+        // arrive as "a b" — silent corruption of exactly the field this whole
+        // method exists to deliver. Android has no such problem: URLEncoder
+        // form-encodes, turning a literal "+" into %2B.
+        //
+        // Encoding it here, on percentEncodedQuery, rather than pre-encoding
+        // the values: URLQueryItem would then percent-encode our percent signs
+        // and double-escape everything.
+        components.percentEncodedQuery = components.percentEncodedQuery?
+            .replacingOccurrences(of: "+", with: "%2B")
+
+        return components.string ?? DomainConfig.resolveClick
     }
 
     /// True when the backend did not recognise the click id we asked about.
@@ -249,7 +310,13 @@ enum NetworkUtils {
             completion(false)
             return
         }
-        let body: [String: Any] = ["event_name": eventName, "parameters": parameters]
+        var body: [String: Any] = ["event_name": eventName, "parameters": parameters]
+        // A sibling of "parameters", never inside it: parameters is what the
+        // tenant reads in their dashboard, and its values are truncated at 256
+        // chars and capped at 25 keys. Nesting is safe here because this body
+        // is built fresh at the call site and never stored as a flat map,
+        // unlike /enrich.
+        if let device = deviceBlock() { body["device"] = device }
         request(DomainConfig.logEvent, method: "POST", apiKey: apiKey, body: body) { result in
             switch result {
             case .success:
@@ -261,6 +328,23 @@ enum NetworkUtils {
                 completion(false)
             }
         }
+    }
+
+    /// The device state to report alongside an event, filtered to the current
+    /// attribution level.
+    ///
+    /// Nil at level `none`, where nothing describing the device may be sent —
+    /// the event itself still goes, since level gates reporting rather than
+    /// functionality.
+    private static func deviceBlock() -> [String: Any]? {
+        let level = AttributionLevel.current
+        guard level.allowsEnrichment else { return nil }
+        let profile = DeviceProfile.current()
+        let signals = profile.merging(DynamicSignals.collect(staticProfile: profile)) { _, new in
+            new
+        }
+        let filtered = level.filter(signals)
+        return filtered.isEmpty ? nil : filtered
     }
 
     static func sendEventNow(payload: [String: Any], apiKey: String) throws {

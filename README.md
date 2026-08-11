@@ -17,7 +17,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_deeplinkly: ^1.8.0
+  flutter_deeplinkly: ^1.9.0
 ```
 
 Then run:
@@ -30,11 +30,22 @@ flutter pub get
 
 ### Android (`android/app/src/main/AndroidManifest.xml`)
 
-Add your deep link intent filter under your `MainActivity`:
+Add **two** intent filters under your `MainActivity` — one for App Links, one
+for your custom scheme:
 
 ```xml
 <activity android:name=".MainActivity">
+  <!-- App Links: lets https://links.yourapp.com/abc123 open the app
+       directly. Required. -->
   <intent-filter android:autoVerify="true">
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data android:scheme="https" android:host="links.yourapp.com" />
+  </intent-filter>
+
+  <!-- Custom scheme: the browser fallback path. -->
+  <intent-filter>
     <action android:name="android.intent.action.VIEW" />
     <category android:name="android.intent.category.DEFAULT" />
     <category android:name="android.intent.category.BROWSABLE" />
@@ -42,6 +53,26 @@ Add your deep link intent filter under your `MainActivity`:
   </intent-filter>
 </activity>
 ```
+
+The App Links filter is the one that decides whether deep linking feels native.
+Without it, a tapped link always goes to the browser first and comes back
+through an `intent://` redirect — which in-app browsers such as Instagram,
+Facebook and TikTok frequently block outright, so the link dies even though the
+app is installed. `android:autoVerify` has no effect on a custom scheme; it
+only applies to `http`/`https`.
+
+For verification to pass, the dashboard needs your package name **and** your
+SHA-256 signing fingerprint — Deeplinkly serves
+`/.well-known/assetlinks.json` from them, and returns 404 if either is missing.
+With Play App Signing, use the fingerprint from **Play Console → Setup → App
+signing**, not your upload keystore. Check it with:
+
+```bash
+adb shell pm get-app-links <your.package.name>
+```
+
+See [docs/FLUTTER_SDK.md](docs/FLUTTER_SDK.md#verifying-app-links) for the full
+walkthrough.
 
 Add Deeplinkly API key metadata:
 
@@ -76,10 +107,9 @@ Add Deeplinkly API key:
 <string>your_api_key_here</string>
 ```
 
-Add your link domains. These gate the deferred deep link check: on first launch
-the SDK reads a link the App Store hand-off left on the pasteboard, and it only
-resolves URLs whose host matches one of these (subdomains included). Without
-this key, deferred deep linking is limited to `deeplinkly.com` links.
+Add your link domains. These gate the deferred deep link check: the SDK only
+resolves pasteboard URLs whose host matches one of these (subdomains included).
+Without this key, deferred deep linking is limited to `deeplinkly.com` links.
 
 ```xml
 <key>DeeplinklyLinkDomains</key>
@@ -88,6 +118,52 @@ this key, deferred deep linking is limited to `deeplinkly.com` links.
   <string>links.yourbrand.com</string>
 </array>
 ```
+
+### Deferred deep linking on iOS
+
+iOS has no install-referrer API, so a link tapped before install survives the
+App Store trip on the pasteboard. Choose how you read it back:
+
+**Recommended — a system paste button, no banner.** Because the user taps it,
+iOS shows no "Pasted from…" prompt:
+
+```dart
+DeeplinklyPasteButton(
+  onPasted: (handled) => setState(() => _showPasteButton = !handled),
+  fallback: const SizedBox.shrink(),
+)
+```
+
+Requires iOS 16+; renders `fallback` elsewhere, so it is safe to place
+unconditionally.
+
+**Also on by default: an automatic read.** The SDK reads the pasteboard once on
+first launch, which shows the system paste banner — but only when a URL is
+actually on the clipboard. A user whose clipboard is empty, or holds text that
+is not a URL, sees nothing.
+
+To turn it off — in `Info.plist`, not from Dart, since the read happens before
+any Dart runs:
+
+```xml
+<key>DeeplinklyCheckPasteboardOnInstall</key>
+<false/>
+```
+
+Use `willShowPasteboardBanner()` and `checkPasteboardNow()` if you would rather
+drive it yourself and explain the prompt first.
+
+### Attribution levels
+
+```dart
+await FlutterDeeplinkly.setAttributionLevel(DeeplinklyAttributionLevel.reduced);
+```
+
+`full` (default) → `reduced` (no hardware signals or ad IDs) → `minimal` (no
+device data at all) → `none` (no reporting). Deep links resolve and deliver at
+every level. Set `DeeplinklyAttributionLevel` in `Info.plist` or the
+`com.deeplinkly.sdk.attribution_level` meta-data to start restricted before any
+Dart runs.
 
 ### iOS Universal Links
 
@@ -106,9 +182,13 @@ dashboard.
 No AppDelegate changes are needed — the plugin registers for both the
 `UIApplicationDelegate` and `UIScene` link callbacks itself.
 
-> **Privacy:** the SDK ships its own `PrivacyInfo.xcprivacy`. It collects no
-> IDFA and never triggers an App Tracking Transparency prompt, so no
-> `NSUserTrackingUsageDescription` is required.
+> **Privacy:** the SDK ships its own `PrivacyInfo.xcprivacy` and **never
+> triggers an App Tracking Transparency prompt** — it only reads the status your
+> own prompt produced. By default it collects no IDFA and needs no
+> `NSUserTrackingUsageDescription`. IDFA collection is opt-in via the
+> `DeeplinklyEnableIDFA` Info.plist key; see
+> [docs/FLUTTER_SDK.md](docs/FLUTTER_SDK.md#collecting-the-idfa-opt-in) for what
+> enabling it obliges you to declare.
 
 ## Quick start
 

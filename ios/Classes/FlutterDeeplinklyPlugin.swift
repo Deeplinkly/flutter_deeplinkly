@@ -38,6 +38,18 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
             }
         }
 
+        // The banner-free deferred path: a system paste button the host app can
+        // place in its own UI. Registered unconditionally — the view reports
+        // its own availability so Dart can fall back below iOS 16.
+        registrar.register(
+            PasteControlFactory(
+                messenger: registrar.messenger(),
+                channel: ch,
+                apiKeyProvider: { storedApiKey ?? "" }
+            ),
+            withId: "deeplinkly/paste_button"
+        )
+
         instance.bootstrap()
 
             // ✅ Flush any pending universal link that arrived before channel setup
@@ -163,6 +175,17 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         self.sdkEnabled = true
         FlutterDeeplinklyPlugin.storedApiKey = key
 
+        // Resolve the WebView user agent before anything wants to send it.
+        // WKWebView may only be constructed on the main thread, while every
+        // collection path runs off it, so this is the one hop that makes the
+        // agent a cached static signal instead of an async collection problem.
+        DeviceProfile.primeUserAgent()
+
+        // The only app-open signal on iOS. Without it a returning user who
+        // never cold-starts the app is invisible — StartupEnrichment fires once
+        // per process, and nothing else observed the foreground.
+        AppOpenReporter.start(apiKey: key)
+
         StartupEnrichment.schedule(apiKey: apiKey, channel: channel)
 
         // Capture locally: these closures outlive bootstrap() and have no
@@ -240,6 +263,36 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
             TrackingPreferences.setTrackingDisabled(disabled)
             result(true)
 
+        case "setAttributionLevel":
+            let raw = (call.arguments as? [String: Any])?["level"] as? String ?? ""
+            guard let level = AttributionLevel(rawValue: raw.lowercased()) else {
+                result(false)
+                return
+            }
+            AttributionLevel.set(level)
+            result(true)
+
+        case "getAttributionLevel":
+            result(AttributionLevel.current.rawValue)
+
+        case "setCheckPasteboardOnInstall":
+            let args = call.arguments as? [String: Any]
+            let enabled = args?["enabled"] as? Bool ?? false
+            // Enabling from Dart is inherently late — bootstrap has already run
+            // — so unless the caller opts out, read straight away rather than
+            // waiting for a next launch the pasteboard may not survive to.
+            let checkNow = args?["check_now"] as? Bool ?? true
+            PasteboardHandler.setCheckEnabled(
+                enabled, channel: channel, apiKey: apiKey, runCheckNow: checkNow)
+            result(true)
+
+        case "willShowPasteboardBanner":
+            PasteboardHandler.willShowBanner { willShow in result(willShow) }
+
+        case "checkPasteboardNow":
+            PasteboardHandler.check(channel: channel, apiKey: apiKey)
+            result(true)
+
         case "setCustomUserId", "setUserId":
             let userId = (call.arguments as? [String: Any])?["user_id"] as? String
             UserIdManager.updateCustomUserId(newId: userId, apiKey: apiKey)
@@ -255,9 +308,17 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
             let seq = UserDefaults.standard.integer(forKey: "dl_event_seq") + 1
             UserDefaults.standard.set(seq, forKey: "dl_event_seq")
             parameters["_dl_event_seq"] = String(seq)
-            parameters["_dl_client_monotonic_ms"] = String(Int(ProcessInfo.processInfo.systemUptime * 1000))
+            // Milliseconds since the SDK initialised, not a raw systemUptime
+            // reading. Same ordering power for events from a device with a
+            // wrong wall clock, without also reporting how long the device has
+            // been booted.
+            parameters["_dl_client_elapsed_ms"] = String(SdkInfo.elapsedSinceInit())
             parameters["_dl_client_wall_epoch_ms"] = String(Int(Date().timeIntervalSince1970 * 1000))
             parameters["_dl_tz_offset_min"] = String(TimeZone.current.secondsFromGMT() / 60)
+            // Joins this event to the device sample taken in the same visit.
+            // Free: _dl_-prefixed keys are reserved and do not count against
+            // the caller's 25-parameter budget.
+            parameters["_dl_session_id"] = SessionManager.currentSessionId()
             NetworkUtils.logEvent(eventName: eventName, parameters: parameters, apiKey: apiKey) { ok in
                 DispatchQueue.main.async { result(ok) }
             }

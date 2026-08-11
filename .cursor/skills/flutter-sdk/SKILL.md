@@ -62,11 +62,21 @@ different on each platform.
 | Purpose | Android | iOS |
 |---|---|---|
 | API key | `com.deeplinkly.sdk.api_key` (`<meta-data>`) | `DeeplinklyApiKey` (`Info.plist`) |
-| Link domain allowlist | n/a (uses intent filters) | `DeeplinklyLinkDomains` (`Info.plist`, array) |
-| Deferred mechanism | Play Install Referrer | Pasteboard, first launch only |
+| Link domain allowlist | `com.deeplinkly.sdk.link_domains` (`<meta-data>`, comma separated) | `DeeplinklyLinkDomains` (`Info.plist`, array) |
+| Deferred mechanism | Play Install Referrer | Pasteboard (opt-in) or `DeeplinklyPasteButton` |
+| Pasteboard opt-in | n/a — removed in 1.9.0, Android has no pasteboard path | `DeeplinklyCheckPasteboardOnInstall` |
+| Attribution level | `com.deeplinkly.sdk.attribution_level` | `DeeplinklyAttributionLevel` |
 
 Never write `DEEPLINKLY_API_KEY`. It is read by neither platform; docs
 carried it in error until 1.8.0.
+
+**As of 1.9.0 the automatic pasteboard read is off by default.** If the task is
+"deferred deep linking does not work on iOS", that is the first thing to check.
+Prefer steering the integrator to `DeeplinklyPasteButton` (a system paste
+button, iOS 16+, no "Pasted from…" banner because the user's tap is the grant)
+over enabling the automatic read. Only enable the automatic read when the app
+genuinely cannot show a button on its first-run path, and pair it with
+`willShowPasteboardBanner()` so the prompt is explained rather than sprung.
 
 Do **not** add `AppDelegate.swift` link-forwarding code. The plugin registers
 for both the `UIApplicationDelegate` and `UIScene` callbacks itself, and hand
@@ -107,8 +117,14 @@ Run and record these checks:
   - inspect normalizer mapping and default route selection
 - **Deferred attribution empty**:
   - check retrieval timing and first-launch lifecycle order
+  - **iOS**: confirm the pasteboard path is actually enabled — the automatic
+    read is opt-in and **off by default** since 1.9.0, and an app with neither
+    `DeeplinklyCheckPasteboardOnInstall` nor a `DeeplinklyPasteButton` has no
+    deferred path at all
   - **iOS**: confirm the link host is listed in `DeeplinklyLinkDomains`; an
     unlisted custom domain is ignored by design
+  - check the attribution level: `none` sends no enrichment, so attribution
+    will look empty server-side even though the link resolved correctly
   - **iOS**: the deferred read is once-per-install and the pasteboard is
     cleared after it. Reinstall to retest — relaunching will not repeat it
   - **iOS**: cannot be tested on the Simulator (no App Store). Use a device
@@ -128,14 +144,19 @@ Run and record these checks:
 - Keep all deeplink handling null-safe and exception-safe.
 - Prefer deterministic fallbacks over hard failures.
 - Keep changes minimal and compatible with existing app architecture.
-- Do not add `AppTrackingTransparency`, `AdSupport`, IDFA reads, or an
-  `NSUserTrackingUsageDescription` on Deeplinkly's behalf. The SDK declares
-  `NSPrivacyTracking = false` and ships its own `PrivacyInfo.xcprivacy`;
-  adding those frameworks makes that declaration false and invites an App
-  Review rejection.
-- Do not implement device-signal fingerprint matching on iOS. It is
-  prohibited by App Review Guideline 5.1.2 and the Apple Developer Program
-  License Agreement.
+- Do not call `ATTrackingManager.requestTrackingAuthorization` on Deeplinkly's
+  behalf, and do not add `NSUserTrackingUsageDescription` unless the app has
+  opted into IDFA collection. The SDK never prompts; it reads the status the
+  app's own prompt produced. IDFA collection is off unless the app sets
+  `DeeplinklyEnableIDFA`, and enabling it obliges the app to merge the SDK's
+  `Resources/IDFA/PrivacyInfo.xcprivacy` template and declare tracking itself.
+- Do not implement device-signal fingerprint *matching*. Signals are collected
+  for reporting; attribution is deterministic on the click id or install
+  referrer. Deriving a device identifier from device signals is prohibited by
+  App Review Guideline 5.1.2 and the Apple Developer Program License Agreement.
+- Do not collect device signals at click time, in the browser or the
+  interstitial. All collection is in-app and post-install; that distinction is
+  the legal basis for it.
 
 ## Done criteria
 
