@@ -1,10 +1,11 @@
 # Native SDK migration — status and handoff
 
 Living status doc for the extraction of the platform SDKs out of the Flutter
-plugin. **Android is done and published. iOS has its tests and its delivery
-seam; no iOS code has moved to a new repo yet.**
+plugin. **Android is done and published. The iOS extraction is complete
+locally: sources, tests, privacy resources, package manifests, catalogue
+tooling, and Flutter-plugin consumption have crossed the boundary.**
 
-Last updated: 2026-08-11.
+Last updated: 2026-08-12.
 
 **Picking this up fresh? Read `NEXT.md` in the repo root** — it is the ordered
 plan for the remaining iOS work. This file is the reference behind it.
@@ -26,7 +27,7 @@ bridge over it. One implementation, three distribution channels.
 |---|---|---|---|
 | Native Android SDK | `Deeplinkly/android_deeplinkly` | `com.deeplinkly.android_deeplinkly` | **done**, `com.deeplinkly:deeplinkly-android:1.0.0` |
 | Flutter plugin | `Deeplinkly/flutter_deeplinkly` | `com.deeplinkly.flutter_deeplinkly` | **done**, consumes the above |
-| Native iOS SDK | (not created) | `com.deeplinkly.ios_deeplinkly` | **not started** |
+| Native iOS SDK | local `ios_deeplinkly` sibling; remote not created | `Deeplinkly` | **extracted locally; publishing pending** |
 
 Local checkouts are siblings under `~/StudioProjects/`. Several tools assume
 that layout (see [Cross-repo tooling](#cross-repo-tooling)).
@@ -44,8 +45,10 @@ The native SDK's public surface is `Deeplinkly` (facade),
 `DeeplinklyDeepLink`, `DeeplinklyDeepLinkListener`, `DeeplinklyEvent`
 (validation), and the models in `DeeplinklyModels.kt`.
 
-iOS now has the same shape without the repo split: `Deeplinkly.swift` is the
-facade, `FlutterDeeplinklyPlugin` translates onto it, and the public surface is
+iOS now has the repo split: `ios_deeplinkly/Sources/Deeplinkly` contains the 28
+Flutter-free files and `flutter_deeplinkly/ios/Classes` contains the three
+bridge files. The native package builds independently, and the Flutter podspec
+depends on and imports its `Deeplinkly` module. Its public surface remains
 `Deeplinkly`, `DeeplinklyDeepLinkListener` and `AttributionLevel`.
 
 ---
@@ -127,19 +130,21 @@ also wanted, it needs its own signal rather than overloading `sdk_version`.
 ## Cross-repo tooling
 
 **Signal catalogue.** `tool/signals.json` in `flutter_deeplinkly` is canonical.
-`tool/gen_signals.dart` writes Swift + docs locally, and takes
-`--android=<path>` (or `DEEPLINKLY_ANDROID`) for the Kotlin catalogue, mirroring
+`tool/gen_signals.dart` takes `--ios=<path>` / `DEEPLINKLY_IOS` and
+`--android=<path>` / `DEEPLINKLY_ANDROID` for the native catalogues, mirroring
 the pre-existing `--backend=<path>`. Regenerate with:
 
 ```bash
-dart run tool/gen_signals.dart --android=../android_deeplinkly
-dart run tool/gen_signals.dart --check --android=../android_deeplinkly   # CI gate
+dart run tool/gen_signals.dart \
+  --ios=../ios_deeplinkly --android=../android_deeplinkly
+dart run tool/gen_signals.dart --check \
+  --ios=../ios_deeplinkly --android=../android_deeplinkly   # CI gate
 ```
 
-**`test/signal_catalogue_test.dart` skips its Kotlin assertions** when
-`android_deeplinkly` is not reachable, so a contributor with one repo checked
-out is not failed. **Release CI must set `DEEPLINKLY_ANDROID`** or catalogue
-drift passes silently.
+**`test/signal_catalogue_test.dart` skips a native platform's assertions** when
+that sibling is not reachable, so a contributor with one repo checked out is
+not failed. **Release CI must set both native repo variables** or catalogue
+drift for the absent checkout passes silently.
 
 **Where the SDK comes from.** `com.deeplinkly:deeplinkly-android:1.0.0` is on
 Maven Central, and both the plugin and the example resolve it from there — the
@@ -169,8 +174,10 @@ manual click on central.sonatype.com because Central releases are immutable.
 ## Verified
 
 Unit: **172 Kotlin tests** in `android_deeplinkly` (168 + 4 version guards),
-1 bridge test in `flutter_deeplinkly`, **458 Swift tests** in
-`example/ios/RunnerTests`, 15 Dart tests, `flutter analyze` clean.
+1 Android bridge test in `flutter_deeplinkly`, **453 Swift package tests** in
+`ios_deeplinkly`, **23 app-hosted iOS tests** in the Flutter example (including
+18 against the real Keychain), and 15 Dart tests. `flutter analyze` has one
+pre-existing `avoid_print` info in `example/lib/main.dart`.
 
 On device (Galaxy A33, Android 16), both the Flutter example and the native
 sample:
@@ -196,18 +203,19 @@ sample:
 
 ---
 
-## Next: iOS
+## iOS extraction
 
-No code has moved to a new repo yet, but the two preconditions for moving it —
-tests, and a delivery seam — are in place. **It is still materially harder than
-Android was** — do not assume the same shape.
+The local `ios_deeplinkly` repo contains the package manifests, all 28
+Flutter-free sources, 453 SDK tests, both privacy manifests, and the generated
+signal catalogue. It builds for the iPhone 17 simulator at the iOS 12
+deployment floor and passes `pod lib lint`.
 
 | | Android | iOS (was) | iOS (now) |
 |---|---|---|---|
 | Files importing Flutter | 5 of 28 | 6 of 26 | **3 of 31** |
 | …genuinely coupled | 2 | 6 | **3** |
 | Delivery sites | 1 funnel | 2 direct `postToFlutter` calls | **1 funnel** |
-| Tests | 168 | 0 | **458** |
+| Tests | 168 | 0 | **453 native + 23 hosted** |
 
 The three files that still import Flutter are the three that should: the plugin
 itself, `PasteControlFactory` (a platform view, which cannot move), and
@@ -216,15 +224,11 @@ behind.
 
 ### Done
 
-- **Swift tests.** 458 in `example/ios/RunnerTests`, run with
-  `xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner
-  -destination 'platform=iOS Simulator,name=iPhone 17'` from `example/`. They
-  reach the SDK via `@testable import flutter_deeplinkly`; the target already
-  existed as the Flutter template stub. **Read
-  `example/ios/RunnerTests/SEAM_TESTS.md` before refactoring** — it records what
-  is covered, what is not, and which refactor unblocks each gap. New test files
-  need registering (`ruby example/ios/add_test_files.rb`); the project uses
-  explicit file references, not a synchronized folder group.
+- **Swift tests.** 453 SDK tests live beside the native package and import
+  `Deeplinkly` directly. RunnerTests retains four MethodChannel adapter cases,
+  the template smoke test, and all 18 storage cases against the real app-hosted
+  Keychain. **Read `example/ios/RunnerTests/SEAM_TESTS.md` before refactoring**
+  for the split and its test seams.
 
 - **One delivery funnel, behind `DeeplinklyDeepLinkListener`.** Delivery used to
   happen at two sites in `DeepLinkHandler`, each holding a
@@ -254,32 +258,39 @@ behind.
   traps (`canInit` must claim everything; the body must be read off
   `httpBodyStream`, never `httpBody`).
 
-### Still to do
+### Extraction steps
 
-Ordered plan with specifics in **`NEXT.md`**. In short:
-
-1. ~~**A `Deeplinkly` facade** mirroring Android's~~ — **done**.
-   `ios/Classes/Deeplinkly.swift`, with the bridge reduced from 24 static entry
-   points across 16 types to one. The public surface is `Deeplinkly`,
-   `DeeplinklyDeepLinkListener` and `AttributionLevel`; everything else is
+1. **A `Deeplinkly` facade mirroring Android's — done.**
+   Now in `ios_deeplinkly/Sources/Deeplinkly/Deeplinkly.swift`, with the bridge
+   reduced from 24 static entry points across 16 types to one. The public
+   surface is `Deeplinkly`, `DeeplinklyDeepLinkListener` and
+   `AttributionLevel`; everything else is
    `internal`, so the extraction is a file move rather than a mass visibility
    edit. It also closed the two bugs that had no home before it: **iOS
    `logEvent` enforced none of the validation the public Dart API documents as
    "enforced natively"** (now `DeeplinklyEvent.swift`, ported from Kotlin), and
    the unsynchronised event-sequence counter.
-2. ~~**The retry-queue key migration** (`sdk_retry_queue` →
-   `dl_pending_retries`)~~ — **done**. First access moves and deletes the legacy
+2. **The retry-queue key migration (`sdk_retry_queue` →
+   `dl_pending_retries`) — done.** First access moves and deletes the legacy
    value; tests cover both a normal upgrade and cleanup after an interrupted
    migration.
-3. **The extraction itself** — including moving ~440 of the 458 tests, which is
-   mechanical but not free. **This is what to do next.**
+3. **The extraction itself — done locally.** Sources and 453 SDK tests moved;
+   CocoaPods and SwiftPM own the resources; catalogue generation targets the
+   native repo; and the Flutter pod is a thin adapter over `Deeplinkly`.
 
 **`PasteControlFactory` stays in the plugin** either way: it is a `UiKitView`
 and cannot move. It is no longer coupled, though — it calls
 `Deeplinkly.handlePaste` and holds no API key of its own.
 
-Distribution is also different: CocoaPods **and** SPM, plus the privacy
-manifest (`PrivacyInfo.xcprivacy`) and the IDFA template need to move with it.
+Distribution supports CocoaPods **and** SPM. Both carry the required-reason
+privacy manifest; the IDFA manifest stays an opt-in template for host apps.
+
+### Still to do
+
+- Create the `Deeplinkly/ios_deeplinkly` remote and add CI/publishing.
+- Release `Deeplinkly 1.9.0` to CocoaPods and tag the Swift package.
+- Remove the example Podfile's `../../../ios_deeplinkly` override after the
+  release so integration tests resolve the published pod.
 
 **Key alignment is done.** The only real cross-platform storage-key divergence
 was the retry queue: `dl_pending_retries` (Android) vs `sdk_retry_queue` (iOS).

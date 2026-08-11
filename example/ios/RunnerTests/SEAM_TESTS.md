@@ -1,26 +1,28 @@
 # iOS SDK unit tests — coverage and gaps
 
-Written **before** the iOS extraction, for the reason the Android extraction
-was safe and this one would not otherwise be: Android had 168 tests checking
-every step, iOS had none. Deferred-attribution bugs fail silently and users do
-not report them.
-
-458 tests. See `docs/NATIVE_SDK_MIGRATION.md` for the extraction plan these
-support.
+Originally written before the iOS extraction. The suite now follows the SDK
+across the repository boundary: 453 SDK tests live in `ios_deeplinkly`, while
+23 app-hosted tests remain here for the Flutter adapter and real Keychain.
+Deferred-attribution bugs fail silently and users do not report them.
 
 ## Running them
 
 ```bash
-cd example
+cd ../ios_deeplinkly
+xcodebuild test -scheme Deeplinkly \
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+
+cd ../flutter_deeplinkly/example
 xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-The tests live in the example app's `RunnerTests` target and reach the SDK
-through `@testable import flutter_deeplinkly` — every type in `ios/Classes` is
-`internal`, so there is no other way in. The target already existed as the
-Flutter template stub; `inherit! :search_paths` in the Podfile is what makes
-the plugin module visible to it.
+SDK tests use `@testable import Deeplinkly` from the native Swift package.
+RunnerTests imports both `Deeplinkly` and `flutter_deeplinkly`; its app host is
+intentional because an unhosted SwiftPM XCTest bundle has no Keychain access
+group. Native tests opt into an in-memory Keychain backend, while the same 18
+storage cases here exercise Security.framework for real. Production never
+enables the memory backend.
 
 **Adding a test file:** the project uses explicit `PBXFileReference`s, not a
 synchronized folder group, so a new file is not compiled until it is
@@ -41,7 +43,7 @@ It adds what is missing and prunes what is gone.
 | `DeepLinkQueueTests` | `DeepLinkQueue` | Identity, dedupe, retry budget, cap, storage round trip, concurrency. |
 | `RetryQueueTests` | `RetryQueue` | Enqueue/remove/cap, `refilter`, TTL sweep. Send dispatch not covered — see below. |
 | `NetworkUtilsTests` | `NetworkUtils` | Response interpretation and payload shaping. Request issuing not covered. |
-| `SdkRuntimeTests` | `SdkRuntime`, `MethodChannelDeepLinkListener` | The delivery funnel: buffering, flush ordering, `onDelivered`, the main-thread hop. |
+| `SdkRuntimeTests` | `SdkRuntime` | Native delivery funnel: buffering, flush ordering, `onDelivered`, the main-thread hop. Four MethodChannel adapter cases remain app-hosted. |
 | `DeepLinkDeliveryGuardTests` | `DeepLinkDeliveryGuard` | The three duplicate-arrival rules and the 10-second suppression window. |
 | `SessionManagerTests` | `SessionManager` | Window arithmetic against an injected clock. |
 | `AttributionStoreTests` | `AttributionStore` | First-touch latch, listener registration and removal. |
@@ -50,7 +52,7 @@ It adds what is missing and prunes what is gone.
 | `DeviceProfileTests` | `DeviceProfile` | Contents, stamp, caching, first-seen latches. |
 | `DynamicSignalsTests` | `DynamicSignals` | Contents, derivations, freshness. |
 | `SignalCoverageTests` | collectors ↔ catalogue | Cross-check; see below. |
-| `StorageTests` | `Keychain`, `DeviceIdManager`, `Prefs`, `TrackingPreferences` | Round trips, install-id stability. |
+| `StorageTests` | `Keychain`, `DeviceIdManager`, `Prefs`, `TrackingPreferences` | Round trips and install-id stability. Runs with memory storage in SwiftPM and again with real Keychain as `HostStorageTests`. |
 | `SdkInfoTests` | `SdkInfo`, `Logger`, `DomainConfig` | Version shape, log gating, frozen endpoint paths. |
 | `PasteboardHandlerTests` | `PasteboardHandler`, `UserIdManager` | Opt-in and priming only; read paths not covered. |
 | `NetworkRequestTests` | `NetworkUtils.request` | Headers, body/query shaping, status and transport handling. |
@@ -164,7 +166,7 @@ reports.
   not `removePersistentDomain`, which would also wipe the host app's defaults.
   **Adding a persisted key to the SDK means adding it to `persistedKeys`** — or
   the first test that writes it poisons every test after it.
-- **`FakeBinaryMessenger`** stands in for the engine. `FlutterMethodChannel` is
+- **`FakeBinaryMessenger` stays app-hosted** and stands in for the engine. `FlutterMethodChannel` is
   concrete and cannot be usefully subclassed, but it accepts any messenger, so
   the fake goes one level down and decodes what was sent.
 - **No sleeps for logic; poll for asynchrony.** `SessionManager`,

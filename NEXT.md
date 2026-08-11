@@ -1,24 +1,39 @@
 # Next steps — iOS SDK extraction
 
-Start-here guide for the next working session. Written 2026-08-11.
+Start-here guide for the next working session. Updated 2026-08-12.
 
 **Read first:** `docs/NATIVE_SDK_MIGRATION.md` (status, constraints,
-load-bearing decisions) and `example/ios/RunnerTests/SEAM_TESTS.md` (what the
-458 Swift tests cover, what they don't, and why).
+load-bearing decisions) and `example/ios/RunnerTests/SEAM_TESTS.md` (how the
+native and app-hosted Swift suites are split, what they cover, and why).
 
 ---
 
 ## Where things stand
 
-Android is extracted, published and consumed. iOS has not moved to its own repo
-yet, but the preconditions are done:
+Android is extracted, published and consumed. The iOS extraction is complete
+locally in the sibling `../ios_deeplinkly` repo:
 
-- **458 Swift tests**, stable across repeated runs.
-- **The Flutter coupling is gone from the SDK proper.** 28 of 31 files are
-  Flutter-free. The three that import Flutter are exactly the ones that should:
+- **453 SDK tests** now live in `../ios_deeplinkly/Tests/DeeplinklyTests` and
+  pass as a Swift package. The Flutter example retains **23 app-hosted tests**:
+  4 MethodChannel adapter tests, 18 real-Keychain tests, and the Runner template
+  smoke test.
+- **The 28 Flutter-free SDK files and both privacy manifests have moved** to
+  `../ios_deeplinkly`. The package builds at the iOS 12 floor through SwiftPM
+  and CocoaPods.
+- **The Flutter plugin keeps exactly three Swift files**, which are the ones
+  that should remain:
   `FlutterDeeplinklyPlugin`, `PasteControlFactory` (a platform view, cannot
   move), and `MethodChannelDeepLinkListener` (25 lines whose purpose is to be
   left behind).
+- **The Flutter plugin consumes `Deeplinkly` as a pod dependency.** Its example
+  uses an explicit local-path development seam until the native SDK is
+  published.
+- **The catalogue generator crosses both native repo boundaries.** Pass
+  `--ios=../ios_deeplinkly --android=../android_deeplinkly`; the corresponding
+  environment variables are `DEEPLINKLY_IOS` and `DEEPLINKLY_ANDROID`.
+- **Verification is green:** 453 native tests, 23 hosted tests, CocoaPods lint,
+  15 Dart tests, and the 73-signal drift check. `flutter analyze` reports only
+  the pre-existing `avoid_print` info in the example app.
 - **The `Deeplinkly` facade exists** and the bridge is a bridge. See below.
 - **The retry queue uses the cross-platform key** `dl_pending_retries`, with a
   tested migration from the former iOS key `sdk_retry_queue`.
@@ -94,38 +109,45 @@ cleanup. `TestSupport.persistedKeys` clears both keys between tests.
 
 ---
 
-## Step 3 — The extraction (do this next)
+## Step 3 — The extraction — **done locally**
 
 Only after 2.
 
-**What moves:** the 28 Flutter-free files in `ios/Classes/`.
-**What stays:** `FlutterDeeplinklyPlugin`, `PasteControlFactory`,
+**Sources:** the 28 Flutter-free files moved from `ios/Classes/` to
+`../ios_deeplinkly/Sources/Deeplinkly`. The files left here are
+`FlutterDeeplinklyPlugin`, `PasteControlFactory`, and
 `MethodChannelDeepLinkListener`.
 
-**The tests move too — budget for it.** Roughly 440 of the 458 are `@testable`
-against internals that are leaving, so they move near-verbatim, along with
-`StubURLProtocol.swift` and `TestSupport.swift`. Only the plugin-level ones
-stay. Mechanical, not risky, but it is a real chunk of the work rather than an
-afterthought.
+**Tests:** 453 SDK tests moved with `StubURLProtocol` and their support code.
+Unhosted SwiftPM tests cannot use the simulator Keychain entitlement, so they
+opt into a process-memory Keychain backend. Production still uses
+Security.framework. The original 18 storage cases also remain in RunnerTests,
+where they verify the real Keychain in a host app.
 
-**Packaging:** CocoaPods **and** SPM (there is no `Package.swift` anywhere
-today, so SPM is net-new). `PrivacyInfo.xcprivacy` and the IDFA template move
-with it. SPM also gives the new repo a test target essentially free
-(`swift test`), which is a second reason to do it properly.
+**Packaging:** `Package.swift` processes the required-reason privacy manifest
+and excludes the opt-in IDFA template. `Deeplinkly.podspec` ships the same
+manifest as a resource bundle. The plugin podspec depends on `Deeplinkly 1.9.0`.
 
-**Tooling:** `tool/gen_signals.dart` needs an `--ios=<path>` flag mirroring the
-existing `--android=`. `tool/signals.json` stays canonical here.
+**Tooling:** `tool/gen_signals.dart` supports `--ios=<path>` and
+`DEEPLINKLY_IOS`; the Dart catalogue test follows the same sibling/env seam and
+skips native assertions only when that checkout is unavailable.
 
-The plugin is already a bridge — step 1 did that — so what is left here is the
-file move itself, not another round of untangling.
+**Next:** create the remote native-iOS repository, add publishing/CI, release
+`Deeplinkly 1.9.0`, then remove the example Podfile's local-path override so it
+tests the same published dependency consumers receive.
 
 ---
 
 ## Mechanics
 
 ```bash
-# Run the Swift suite
-cd example
+# Run the native SDK suite (453 tests)
+cd ../ios_deeplinkly
+xcodebuild test -scheme Deeplinkly \
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+
+# Run the app-hosted bridge + real-Keychain suite (23 tests)
+cd ../flutter_deeplinkly/example
 xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 
@@ -133,8 +155,12 @@ xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
 # synchronized folder group — a new file is not compiled until registered)
 ruby example/ios/add_test_files.rb
 
-# After adding a file to ios/Classes/
+# After changing pod dependencies
 cd example/ios && pod install
+
+# Check all generated native catalogues
+dart run tool/gen_signals.dart --check \
+  --ios=../ios_deeplinkly --android=../android_deeplinkly
 ```
 
 Three traps, all documented at length in `SEAM_TESTS.md`:

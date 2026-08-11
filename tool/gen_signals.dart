@@ -2,6 +2,7 @@
 //
 //   dart run tool/gen_signals.dart                    # write Swift + docs
 //   dart run tool/gen_signals.dart --android=<path>   # ...and the Kotlin module
+//   dart run tool/gen_signals.dart --ios=<path>       # ...and the Swift package
 //   dart run tool/gen_signals.dart --backend=<path>   # ...and the Django module
 //   dart run tool/gen_signals.dart --check            # exit 1 if anything is stale
 //
@@ -14,6 +15,7 @@
 // cannot be hard-coded:
 //
 //   --android=/path/to/android_deeplinkly  or  DEEPLINKLY_ANDROID
+//   --ios=/path/to/ios_deeplinkly          or  DEEPLINKLY_IOS
 //   --backend=/path/to/deeplinkly          or  DEEPLINKLY_BACKEND
 //
 // Without either the corresponding output is skipped, and --check does not fail
@@ -30,10 +32,11 @@ const _defaultMaxLen = 256;
 
 void main(List<String> args) {
   final check = args.contains('--check');
-  final backend = _flag(args, '--backend') ??
-      Platform.environment['DEEPLINKLY_BACKEND'];
-  final android = _flag(args, '--android') ??
-      Platform.environment['DEEPLINKLY_ANDROID'];
+  final backend =
+      _flag(args, '--backend') ?? Platform.environment['DEEPLINKLY_BACKEND'];
+  final android =
+      _flag(args, '--android') ?? Platform.environment['DEEPLINKLY_ANDROID'];
+  final ios = _flag(args, '--ios') ?? Platform.environment['DEEPLINKLY_IOS'];
 
   final root = _repoRoot();
   final sourcePath = '$root/tool/signals.json';
@@ -69,22 +72,40 @@ void main(List<String> args) {
   _validate(signals);
 
   final outputs = <String, String>{
-    '$root/ios/Classes/SignalCatalogue.swift': _swift(version, signals),
     '$root/docs/SIGNALS.md': _markdown(version, signals),
   };
+
+  // The Swift catalogue moved with the native iOS SDK. Keep a source copy in
+  // that repo as well so its own tests and releases do not reach across repos.
+  if (ios != null && ios.isNotEmpty) {
+    final dir = _trimSlash(ios);
+    const module = 'Sources/Deeplinkly';
+    if (!Directory('$dir/$module').existsSync()) {
+      _fail('--ios=$dir does not look like the ios_deeplinkly repo '
+          '(no $module)');
+    }
+    outputs['$dir/$module/SignalCatalogue.swift'] = _swift(version, signals);
+    outputs['$dir/tool/signals.json'] = source.readAsStringSync();
+  } else {
+    stderr.writeln(
+      'note: no --ios/DEEPLINKLY_IOS, skipping SignalCatalogue.swift',
+    );
+  }
 
   // The Kotlin catalogue moved to the native Android SDK repo when the Android
   // implementation was extracted. The Flutter plugin no longer holds a copy —
   // it consumes the published AAR — so there is nothing to generate here.
   if (android != null && android.isNotEmpty) {
     final dir = _trimSlash(android);
-    const module = 'deeplinkly/src/main/kotlin/com/deeplinkly/android_deeplinkly';
+    const module =
+        'deeplinkly/src/main/kotlin/com/deeplinkly/android_deeplinkly';
     if (!Directory('$dir/$module').existsSync()) {
       _fail('--android=$dir does not look like the android_deeplinkly repo '
           '(no $module)');
     }
-    outputs['$dir/$module/privacy/SignalCatalogue.kt'] =
-        _kotlin(version, signals, package: 'com.deeplinkly.android_deeplinkly.privacy');
+    outputs['$dir/$module/privacy/SignalCatalogue.kt'] = _kotlin(
+        version, signals,
+        package: 'com.deeplinkly.android_deeplinkly.privacy');
     // Same reason the backend gets one: the SDK's own parity test needs a local
     // copy to compare against and cannot reach across repositories.
     outputs['$dir/tool/signals.json'] = source.readAsStringSync();
@@ -97,7 +118,8 @@ void main(List<String> args) {
   if (backend != null && backend.isNotEmpty) {
     final dir = _trimSlash(backend);
     if (!Directory('$dir/links').existsSync()) {
-      _fail('--backend=$dir does not look like the Django repo (no links/ dir)');
+      _fail(
+          '--backend=$dir does not look like the Django repo (no links/ dir)');
     }
     outputs['$dir/links/signal_catalogue.py'] = _python(version, signals);
     // The backend's parity test needs a local copy to compare against; it
@@ -263,36 +285,49 @@ String _kotlin(int version, List<_Signal> signals, {required String package}) {
     ..write(_banner)
     ..writeln('package $package')
     ..writeln()
-    ..writeln('/** The lowest [AttributionLevel] at which a signal still ships. */')
+    ..writeln(
+        '/** The lowest [AttributionLevel] at which a signal still ships. */')
     ..writeln('enum class SignalTier(val rank: Int) {')
     ..writeln('    MINIMAL(0),')
     ..writeln('    REDUCED(1),')
     ..writeln('    FULL(2),')
     ..writeln('}')
     ..writeln()
-    ..writeln('/** Where a signal comes from, and where the backend stores it. */')
+    ..writeln(
+        '/** Where a signal comes from, and where the backend stores it. */')
     ..writeln('enum class SignalScope {')
-    ..writeln('    /** Collected once per device and cached until the profile stamp changes. */')
+    ..writeln(
+        '    /** Collected once per device and cached until the profile stamp changes. */')
     ..writeln('    STATIC,')
-    ..writeln('    /** Collected fresh at send time. Never persisted in a queue. */')
+    ..writeln(
+        '    /** Collected fresh at send time. Never persisted in a queue. */')
     ..writeln('    DYNAMIC,')
-    ..writeln('    /** Names the link or user being reported on, not the device. */')
+    ..writeln(
+        '    /** Names the link or user being reported on, not the device. */')
     ..writeln('    IDENTITY,')
     ..writeln('}')
     ..writeln()
-    ..writeln('data class SignalSpec(val tier: SignalTier, val scope: SignalScope)')
+    ..writeln(
+        'data class SignalSpec(val tier: SignalTier, val scope: SignalScope)')
     ..writeln()
     ..writeln('/**')
-    ..writeln(' * Every signal the SDK may send, and the level at which each is permitted.')
+    ..writeln(
+        ' * Every signal the SDK may send, and the level at which each is permitted.')
     ..writeln(' *')
-    ..writeln(' * Fail-closed by construction: [allows] returns false for any key that is')
-    ..writeln(' * not in [SPECS], at every level including FULL. A new signal that nobody')
-    ..writeln(' * classified therefore never leaves the device, which is the failure mode')
-    ..writeln(' * we want. The previous design was the opposite — REDUCED was a denylist,')
-    ..writeln(' * so an unclassified key shipped to users who had asked us not to.')
+    ..writeln(
+        ' * Fail-closed by construction: [allows] returns false for any key that is')
+    ..writeln(
+        ' * not in [SPECS], at every level including FULL. A new signal that nobody')
+    ..writeln(
+        ' * classified therefore never leaves the device, which is the failure mode')
+    ..writeln(
+        ' * we want. The previous design was the opposite — REDUCED was a denylist,')
+    ..writeln(
+        ' * so an unclassified key shipped to users who had asked us not to.')
     ..writeln(' */')
     ..writeln('object SignalCatalogue {')
-    ..writeln('    /** Part of the static-profile stamp; bumping it forces a re-collect. */')
+    ..writeln(
+        '    /** Part of the static-profile stamp; bumping it forces a re-collect. */')
     ..writeln('    const val VERSION = $version')
     ..writeln()
     ..writeln('    val SPECS: Map<String, SignalSpec> = mapOf(');
@@ -308,13 +343,16 @@ String _kotlin(int version, List<_Signal> signals, {required String package}) {
   b
     ..writeln('    )')
     ..writeln()
-    ..writeln('    /** Whether [key] may be sent at [level]. Unknown keys are never sent. */')
+    ..writeln(
+        '    /** Whether [key] may be sent at [level]. Unknown keys are never sent. */')
     ..writeln('    fun allows(key: String, level: AttributionLevel): Boolean {')
     ..writeln('        val spec = SPECS[key] ?: return false')
     ..writeln('        return when (level) {')
     ..writeln('            AttributionLevel.FULL -> true')
-    ..writeln('            AttributionLevel.REDUCED -> spec.tier.rank <= SignalTier.REDUCED.rank')
-    ..writeln('            AttributionLevel.MINIMAL -> spec.tier.rank <= SignalTier.MINIMAL.rank')
+    ..writeln(
+        '            AttributionLevel.REDUCED -> spec.tier.rank <= SignalTier.REDUCED.rank')
+    ..writeln(
+        '            AttributionLevel.MINIMAL -> spec.tier.rank <= SignalTier.MINIMAL.rank')
     ..writeln('            AttributionLevel.NONE -> false')
     ..writeln('        }')
     ..writeln('    }')
@@ -330,7 +368,8 @@ String _swift(int version, List<_Signal> signals) {
     ..write(_banner)
     ..writeln('import Foundation')
     ..writeln()
-    ..writeln('/// The lowest `AttributionLevel` at which a signal still ships.')
+    ..writeln(
+        '/// The lowest `AttributionLevel` at which a signal still ships.')
     ..writeln('enum SignalTier: Int {')
     ..writeln('    case minimal = 0')
     ..writeln('    case reduced = 1')
@@ -339,14 +378,18 @@ String _swift(int version, List<_Signal> signals) {
     ..writeln()
     ..writeln('/// Where a signal comes from, and where the backend stores it.')
     ..writeln('///')
-    ..writeln('/// The cases are named `staticProfile`/`dynamicSignal` rather than')
+    ..writeln(
+        '/// The cases are named `staticProfile`/`dynamicSignal` rather than')
     ..writeln('/// `static`/`dynamic` because both are Swift keywords.')
     ..writeln('enum SignalScope {')
-    ..writeln('    /// Collected once per device and cached until the profile stamp changes.')
+    ..writeln(
+        '    /// Collected once per device and cached until the profile stamp changes.')
     ..writeln('    case staticProfile')
-    ..writeln('    /// Collected fresh at send time. Never persisted in a queue.')
+    ..writeln(
+        '    /// Collected fresh at send time. Never persisted in a queue.')
     ..writeln('    case dynamicSignal')
-    ..writeln('    /// Names the link or user being reported on, not the device.')
+    ..writeln(
+        '    /// Names the link or user being reported on, not the device.')
     ..writeln('    case identity')
     ..writeln('}')
     ..writeln()
@@ -355,14 +398,19 @@ String _swift(int version, List<_Signal> signals) {
     ..writeln('    let scope: SignalScope')
     ..writeln('}')
     ..writeln()
-    ..writeln('/// Every signal the SDK may send, and the level at which each is permitted.')
+    ..writeln(
+        '/// Every signal the SDK may send, and the level at which each is permitted.')
     ..writeln('///')
-    ..writeln('/// Fail-closed by construction: `allows` returns false for any key not in')
-    ..writeln('/// `specs`, at every level including `.full`. Must stay in lockstep with')
-    ..writeln('/// the Kotlin twin — which is why both are generated from tool/signals.json')
+    ..writeln(
+        '/// Fail-closed by construction: `allows` returns false for any key not in')
+    ..writeln(
+        '/// `specs`, at every level including `.full`. Must stay in lockstep with')
+    ..writeln(
+        '/// the Kotlin twin — which is why both are generated from tool/signals.json')
     ..writeln('/// rather than maintained by hand.')
     ..writeln('enum SignalCatalogue {')
-    ..writeln('    /// Part of the static-profile stamp; bumping it forces a re-collect.')
+    ..writeln(
+        '    /// Part of the static-profile stamp; bumping it forces a re-collect.')
     ..writeln('    static let version = $version')
     ..writeln()
     ..writeln('    static let specs: [String: SignalSpec] = [');
@@ -377,13 +425,17 @@ String _swift(int version, List<_Signal> signals) {
   b
     ..writeln('    ]')
     ..writeln()
-    ..writeln('    /// Whether `key` may be sent at `level`. Unknown keys are never sent.')
-    ..writeln('    static func allows(_ key: String, at level: AttributionLevel) -> Bool {')
+    ..writeln(
+        '    /// Whether `key` may be sent at `level`. Unknown keys are never sent.')
+    ..writeln(
+        '    static func allows(_ key: String, at level: AttributionLevel) -> Bool {')
     ..writeln('        guard let spec = specs[key] else { return false }')
     ..writeln('        switch level {')
     ..writeln('        case .full: return true')
-    ..writeln('        case .reduced: return spec.tier.rawValue <= SignalTier.reduced.rawValue')
-    ..writeln('        case .minimal: return spec.tier.rawValue <= SignalTier.minimal.rawValue')
+    ..writeln(
+        '        case .reduced: return spec.tier.rawValue <= SignalTier.reduced.rawValue')
+    ..writeln(
+        '        case .minimal: return spec.tier.rawValue <= SignalTier.minimal.rawValue')
     ..writeln('        case .none: return false')
     ..writeln('        }')
     ..writeln('    }')
@@ -407,20 +459,29 @@ String _markdown(int version, List<_Signal> signals) {
     ..writeln()
     ..writeln('# Device signals')
     ..writeln()
-    ..writeln('Every field the SDK may send to `/api/v1/enrich`, and the lowest')
-    ..writeln('[attribution level](FLUTTER_SDK.md#attribution-levels) at which each still')
+    ..writeln(
+        'Every field the SDK may send to `/api/v1/enrich`, and the lowest')
+    ..writeln(
+        '[attribution level](FLUTTER_SDK.md#attribution-levels) at which each still')
     ..writeln('ships. Catalogue version $version.')
     ..writeln()
-    ..writeln('A field absent from this table is never sent, at any level: the SDK drops')
-    ..writeln('anything it cannot find in the catalogue rather than defaulting to')
+    ..writeln(
+        'A field absent from this table is never sent, at any level: the SDK drops')
+    ..writeln(
+        'anything it cannot find in the catalogue rather than defaulting to')
     ..writeln('permissive.')
     ..writeln()
-    ..writeln('**Level** — `minimal` also ships at `reduced` and `full`; `reduced` also')
-    ..writeln('ships at `full`; `full` ships only at `full`. At `none` nothing is sent.')
+    ..writeln(
+        '**Level** — `minimal` also ships at `reduced` and `full`; `reduced` also')
+    ..writeln(
+        'ships at `full`; `full` ships only at `full`. At `none` nothing is sent.')
     ..writeln()
-    ..writeln('**When** — `static` is collected once per device and cached until the app,')
-    ..writeln('OS or SDK version changes. `dynamic` is re-read on every send. `identity`')
-    ..writeln('names the link or user being reported on rather than the device.')
+    ..writeln(
+        '**When** — `static` is collected once per device and cached until the app,')
+    ..writeln(
+        'OS or SDK version changes. `dynamic` is re-read on every send. `identity`')
+    ..writeln(
+        'names the link or user being reported on rather than the device.')
     ..writeln();
 
   for (final scope in ['identity', 'static', 'dynamic']) {
@@ -446,7 +507,8 @@ String _markdown(int version, List<_Signal> signals) {
   return b.toString();
 }
 
-int _tierRank(String tier) => const {'minimal': 0, 'reduced': 1, 'full': 2}[tier]!;
+int _tierRank(String tier) =>
+    const {'minimal': 0, 'reduced': 1, 'full': 2}[tier]!;
 
 String _scopeHeading(String scope) {
   if (scope == 'identity') return 'Link identity';
@@ -465,15 +527,21 @@ String _python(int version, List<_Signal> signals) {
   final b = StringBuffer()
     ..writeln('# GENERATED FILE — do not edit.')
     ..writeln('# Source: links/signals.json (copied from the SDK repo)')
-    ..writeln('# Regenerate: dart run tool/gen_signals.dart --backend=<this repo>')
-    ..writeln('"""Every device signal the SDK may send, and the level each requires.')
+    ..writeln(
+        '# Regenerate: dart run tool/gen_signals.dart --backend=<this repo>')
+    ..writeln(
+        '"""Every device signal the SDK may send, and the level each requires.')
     ..writeln()
-    ..writeln('The tier/scope tables here are the same ones compiled into the Android and')
-    ..writeln('iOS SDKs. `type` names a caster rather than holding one: the casters live')
-    ..writeln('in links/views.py where they always have, and importing them here would be')
+    ..writeln(
+        'The tier/scope tables here are the same ones compiled into the Android and')
+    ..writeln(
+        'iOS SDKs. `type` names a caster rather than holding one: the casters live')
+    ..writeln(
+        'in links/views.py where they always have, and importing them here would be')
     ..writeln('circular. Callers map TYPE_* to their own caster.')
     ..writeln()
-    ..writeln('A key absent from SIGNAL_SPECS is dropped on ingest, mirroring the SDK.')
+    ..writeln(
+        'A key absent from SIGNAL_SPECS is dropped on ingest, mirroring the SDK.')
     ..writeln('"""')
     ..writeln()
     ..writeln('CATALOGUE_VERSION = $version')
@@ -482,7 +550,8 @@ String _python(int version, List<_Signal> signals) {
     ..writeln('TIER_REDUCED = "reduced"')
     ..writeln('TIER_FULL = "full"')
     ..writeln()
-    ..writeln('# Rank order, lowest tier first. A signal ships at a level when its tier')
+    ..writeln(
+        '# Rank order, lowest tier first. A signal ships at a level when its tier')
     ..writeln('# rank is at or below that level\'s rank.')
     ..writeln('TIER_RANK = {TIER_MINIMAL: 0, TIER_REDUCED: 1, TIER_FULL: 2}')
     ..writeln()
@@ -508,20 +577,24 @@ String _python(int version, List<_Signal> signals) {
     ..writeln('}')
     ..writeln()
     ..writeln('STATIC_KEYS = frozenset(')
-    ..writeln('    k for k, v in SIGNAL_SPECS.items() if v["scope"] == SCOPE_STATIC')
+    ..writeln(
+        '    k for k, v in SIGNAL_SPECS.items() if v["scope"] == SCOPE_STATIC')
     ..writeln(')')
     ..writeln('DYNAMIC_KEYS = frozenset(')
-    ..writeln('    k for k, v in SIGNAL_SPECS.items() if v["scope"] == SCOPE_DYNAMIC')
+    ..writeln(
+        '    k for k, v in SIGNAL_SPECS.items() if v["scope"] == SCOPE_DYNAMIC')
     ..writeln(')')
     ..writeln('IDENTITY_KEYS = frozenset(')
-    ..writeln('    k for k, v in SIGNAL_SPECS.items() if v["scope"] == SCOPE_IDENTITY')
+    ..writeln(
+        '    k for k, v in SIGNAL_SPECS.items() if v["scope"] == SCOPE_IDENTITY')
     ..writeln(')')
     ..writeln()
     ..writeln()
     ..writeln('def allows(key, level):')
     ..writeln('    """Whether `key` is permitted at attribution level `level`.')
     ..writeln()
-    ..writeln('    Unknown keys and unknown levels are refused, matching the SDK.')
+    ..writeln(
+        '    Unknown keys and unknown levels are refused, matching the SDK.')
     ..writeln('    """')
     ..writeln('    spec = SIGNAL_SPECS.get(key)')
     ..writeln('    if spec is None:')

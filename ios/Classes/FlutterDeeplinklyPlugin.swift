@@ -1,3 +1,4 @@
+import Deeplinkly
 import Flutter
 import UIKit
 
@@ -186,7 +187,6 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
 
         case "onLifecycleChange":
             let state = args?["state"] as? String ?? ""
-            Logger.d("Lifecycle: \(state)")
             if state == "resumed" {
                 // Re-attached rather than assumed: an engine that detached and
                 // came back cleared the listener on the way out.

@@ -1,4 +1,5 @@
 // MethodChannelDeepLinkListener.swift
+import Deeplinkly
 import Flutter
 import Foundation
 

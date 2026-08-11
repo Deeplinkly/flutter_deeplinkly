@@ -7,41 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0175EEACB386094C489A97D7 /* StorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8001CBB652A4DB47687AF1 /* StorageTests.swift */; };
-		0540FA7547C395C11A985BED /* StubURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E747253AAA8FEC760C2D359 /* StubURLProtocol.swift */; };
-		0BE3725632A3D251DE8DC9B6 /* SignalCoverageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95C8633D9376E0975DBCEC63 /* SignalCoverageTests.swift */; };
-		0F4621C5310A562E6534491E /* DeviceProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CF4BB7533BC2E5ED7448585 /* DeviceProfileTests.swift */; };
+		081342E7C45644B79860A554 /* PluginTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2855A2C8DD3E59A4D22FC31E /* PluginTestSupport.swift */; };
+		0AE4A5457EB91D75F836E614 /* HostStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4D50D86BA69DFE015F00518 /* HostStorageTests.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
-		15259199AC9AE974C3EC550C /* SdkRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051A3C0B07A6CF3DFF160ED3 /* SdkRuntimeTests.swift */; };
-		1A4B918638937FBFA9836BA2 /* AppOpenReporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EABBF4038F97D0365C14222 /* AppOpenReporterTests.swift */; };
-		1BD51360B6064CF092C5C1E3 /* DeeplinklyEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE6C47B591771895F0C695D5 /* DeeplinklyEventTests.swift */; };
-		2CB5408F58FCBAC3FFD6D1AF /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B743BC210D227FEA7E6E25EE /* TestSupport.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
-		378A3680586FB728D9A95AFA /* EnrichmentSenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5656FE09CEEE438EEEA10A0F /* EnrichmentSenderTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
-		3D975F26276DB6FE1E082698 /* DeepLinkHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDD341FA274974F79625B79D /* DeepLinkHandlerTests.swift */; };
-		3E60B0112EECB93CDA623676 /* NetworkRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F229EF40ED16472DD619F13 /* NetworkRequestTests.swift */; };
-		484CD9E192B6050EF0BFAB06 /* SessionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1C402E7565B3A8FAAE85E4E /* SessionManagerTests.swift */; };
-		5BF3D9EBA88C576E6265D5D3 /* NetworkUtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F27DAE0F292CAC91755ADEE4 /* NetworkUtilsTests.swift */; };
-		71487DDE9295DDEE4F6B9C45 /* PasteboardHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F39A0E2CB6C4491884E422AB /* PasteboardHandlerTests.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
-		95BC854D875DD252C139D78A /* DynamicSignalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C340ED2EC7F0782477D9A9 /* DynamicSignalsTests.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
-		A0196895DFE61D4399339F3F /* DeeplinklyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E1C8B6D6E92C0A90F0CA97 /* DeeplinklyTests.swift */; };
-		A75AB7EF95082554B7ADC4BE /* AttributionLevelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62AACF54BAD7D3B4F9C474A /* AttributionLevelTests.swift */; };
 		AE7CAD024C53AE0723B9B9F9 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50ED8A9C8CCAB019EC5A6934 /* Pods_RunnerTests.framework */; };
-		B4D24AC65038CD35EC9EA29C /* SdkInfoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0845C606708CDEC480A931F /* SdkInfoTests.swift */; };
-		BA9C7019EA42985460DAC358 /* RetryQueueDrainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66F9236AB7524588EC7B9B2 /* RetryQueueDrainTests.swift */; };
-		C0F88AD9FC55BA96F819A2FB /* LinkDomainsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5975C97746E6DBBB7F592EAF /* LinkDomainsTests.swift */; };
-		CBE668E7EA0E3500DE541653 /* DeepLinkDeliveryGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39737FDDA55809ADCFEBCA71 /* DeepLinkDeliveryGuardTests.swift */; };
-		D48BDD4AD3027D5213E752AD /* AttributionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 265DC9F480E3E02ED692BF71 /* AttributionStoreTests.swift */; };
-		DDB92707F22248F4F65482F0 /* RetryQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF5C732AD1A2D861B156E37 /* RetryQueueTests.swift */; };
-		E66011DE43DA5D0CBE8B3181 /* NetworkSendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D1AA2DA229D26589CE9815 /* NetworkSendTests.swift */; };
+		E84F74FA53CB5989B9C25B1F /* MethodChannelDeepLinkListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110EA55F24906D910A661486 /* MethodChannelDeepLinkListenerTests.swift */; };
 		EA99BDABE6AE623CFC7BAB0B /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 25D46190C9F0B315AE044860 /* Pods_Runner.framework */; };
-		F6B914EAF34C3554624729D3 /* SignalCatalogueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3143C23C7967196347978F06 /* SignalCatalogueTests.swift */; };
-		FE5C504325A2F969DBFDB2B6 /* DeepLinkQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB457E1104973D3262202B04 /* DeepLinkQueueTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -68,33 +45,22 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		051A3C0B07A6CF3DFF160ED3 /* SdkRuntimeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SdkRuntimeTests.swift; sourceTree = "<group>"; };
-		09D1AA2DA229D26589CE9815 /* NetworkSendTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NetworkSendTests.swift; sourceTree = "<group>"; };
 		0C7E878A987DE9C4486C9DBA /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
+		110EA55F24906D910A661486 /* MethodChannelDeepLinkListenerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MethodChannelDeepLinkListenerTests.swift; sourceTree = "<group>"; };
 		1352AAE1F5F222C9C9A0F509 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
-		21E1C8B6D6E92C0A90F0CA97 /* DeeplinklyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeeplinklyTests.swift; sourceTree = "<group>"; };
 		25D46190C9F0B315AE044860 /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		265DC9F480E3E02ED692BF71 /* AttributionStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttributionStoreTests.swift; sourceTree = "<group>"; };
-		2EABBF4038F97D0365C14222 /* AppOpenReporterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppOpenReporterTests.swift; sourceTree = "<group>"; };
+		2855A2C8DD3E59A4D22FC31E /* PluginTestSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PluginTestSupport.swift; sourceTree = "<group>"; };
 		2FEBA416313F7FF705CE79EC /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
-		3143C23C7967196347978F06 /* SignalCatalogueTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SignalCatalogueTests.swift; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		39737FDDA55809ADCFEBCA71 /* DeepLinkDeliveryGuardTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeepLinkDeliveryGuardTests.swift; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
-		4CF5C732AD1A2D861B156E37 /* RetryQueueTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RetryQueueTests.swift; sourceTree = "<group>"; };
 		50ED8A9C8CCAB019EC5A6934 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		5656FE09CEEE438EEEA10A0F /* EnrichmentSenderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EnrichmentSenderTests.swift; sourceTree = "<group>"; };
-		5975C97746E6DBBB7F592EAF /* LinkDomainsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LinkDomainsTests.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		764B1712E348203B4FC2DBE3 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
-		8CF4BB7533BC2E5ED7448585 /* DeviceProfileTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceProfileTests.swift; sourceTree = "<group>"; };
-		8F229EF40ED16472DD619F13 /* NetworkRequestTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NetworkRequestTests.swift; sourceTree = "<group>"; };
-		95C8633D9376E0975DBCEC63 /* SignalCoverageTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SignalCoverageTests.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -102,21 +68,9 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		9E747253AAA8FEC760C2D359 /* StubURLProtocol.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StubURLProtocol.swift; sourceTree = "<group>"; };
-		A2C340ED2EC7F0782477D9A9 /* DynamicSignalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DynamicSignalsTests.swift; sourceTree = "<group>"; };
-		AD8001CBB652A4DB47687AF1 /* StorageTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StorageTests.swift; sourceTree = "<group>"; };
-		B743BC210D227FEA7E6E25EE /* TestSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TestSupport.swift; sourceTree = "<group>"; };
-		BB457E1104973D3262202B04 /* DeepLinkQueueTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeepLinkQueueTests.swift; sourceTree = "<group>"; };
-		C0845C606708CDEC480A931F /* SdkInfoTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SdkInfoTests.swift; sourceTree = "<group>"; };
-		C1C402E7565B3A8FAAE85E4E /* SessionManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionManagerTests.swift; sourceTree = "<group>"; };
+		B4D50D86BA69DFE015F00518 /* HostStorageTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HostStorageTests.swift; sourceTree = "<group>"; };
 		C224702578BCCB47B30C40E0 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
-		C62AACF54BAD7D3B4F9C474A /* AttributionLevelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttributionLevelTests.swift; sourceTree = "<group>"; };
-		CE6C47B591771895F0C695D5 /* DeeplinklyEventTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeeplinklyEventTests.swift; sourceTree = "<group>"; };
-		D66F9236AB7524588EC7B9B2 /* RetryQueueDrainTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RetryQueueDrainTests.swift; sourceTree = "<group>"; };
-		DDD341FA274974F79625B79D /* DeepLinkHandlerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeepLinkHandlerTests.swift; sourceTree = "<group>"; };
 		E787AE5DE92AB2CC4F43C3F5 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
-		F27DAE0F292CAC91755ADEE4 /* NetworkUtilsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NetworkUtilsTests.swift; sourceTree = "<group>"; };
-		F39A0E2CB6C4491884E422AB /* PasteboardHandlerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PasteboardHandlerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -166,32 +120,9 @@
 			isa = PBXGroup;
 			children = (
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
-				C62AACF54BAD7D3B4F9C474A /* AttributionLevelTests.swift */,
-				3143C23C7967196347978F06 /* SignalCatalogueTests.swift */,
-				B743BC210D227FEA7E6E25EE /* TestSupport.swift */,
-				BB457E1104973D3262202B04 /* DeepLinkQueueTests.swift */,
-				F27DAE0F292CAC91755ADEE4 /* NetworkUtilsTests.swift */,
-				051A3C0B07A6CF3DFF160ED3 /* SdkRuntimeTests.swift */,
-				2EABBF4038F97D0365C14222 /* AppOpenReporterTests.swift */,
-				265DC9F480E3E02ED692BF71 /* AttributionStoreTests.swift */,
-				8CF4BB7533BC2E5ED7448585 /* DeviceProfileTests.swift */,
-				A2C340ED2EC7F0782477D9A9 /* DynamicSignalsTests.swift */,
-				5975C97746E6DBBB7F592EAF /* LinkDomainsTests.swift */,
-				F39A0E2CB6C4491884E422AB /* PasteboardHandlerTests.swift */,
-				4CF5C732AD1A2D861B156E37 /* RetryQueueTests.swift */,
-				C0845C606708CDEC480A931F /* SdkInfoTests.swift */,
-				C1C402E7565B3A8FAAE85E4E /* SessionManagerTests.swift */,
-				95C8633D9376E0975DBCEC63 /* SignalCoverageTests.swift */,
-				AD8001CBB652A4DB47687AF1 /* StorageTests.swift */,
-				39737FDDA55809ADCFEBCA71 /* DeepLinkDeliveryGuardTests.swift */,
-				8F229EF40ED16472DD619F13 /* NetworkRequestTests.swift */,
-				9E747253AAA8FEC760C2D359 /* StubURLProtocol.swift */,
-				DDD341FA274974F79625B79D /* DeepLinkHandlerTests.swift */,
-				09D1AA2DA229D26589CE9815 /* NetworkSendTests.swift */,
-				5656FE09CEEE438EEEA10A0F /* EnrichmentSenderTests.swift */,
-				D66F9236AB7524588EC7B9B2 /* RetryQueueDrainTests.swift */,
-				CE6C47B591771895F0C695D5 /* DeeplinklyEventTests.swift */,
-				21E1C8B6D6E92C0A90F0CA97 /* DeeplinklyTests.swift */,
+				110EA55F24906D910A661486 /* MethodChannelDeepLinkListenerTests.swift */,
+				2855A2C8DD3E59A4D22FC31E /* PluginTestSupport.swift */,
+				B4D50D86BA69DFE015F00518 /* HostStorageTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -448,32 +379,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
-				A75AB7EF95082554B7ADC4BE /* AttributionLevelTests.swift in Sources */,
-				F6B914EAF34C3554624729D3 /* SignalCatalogueTests.swift in Sources */,
-				2CB5408F58FCBAC3FFD6D1AF /* TestSupport.swift in Sources */,
-				FE5C504325A2F969DBFDB2B6 /* DeepLinkQueueTests.swift in Sources */,
-				5BF3D9EBA88C576E6265D5D3 /* NetworkUtilsTests.swift in Sources */,
-				15259199AC9AE974C3EC550C /* SdkRuntimeTests.swift in Sources */,
-				1A4B918638937FBFA9836BA2 /* AppOpenReporterTests.swift in Sources */,
-				D48BDD4AD3027D5213E752AD /* AttributionStoreTests.swift in Sources */,
-				0F4621C5310A562E6534491E /* DeviceProfileTests.swift in Sources */,
-				95BC854D875DD252C139D78A /* DynamicSignalsTests.swift in Sources */,
-				C0F88AD9FC55BA96F819A2FB /* LinkDomainsTests.swift in Sources */,
-				71487DDE9295DDEE4F6B9C45 /* PasteboardHandlerTests.swift in Sources */,
-				DDB92707F22248F4F65482F0 /* RetryQueueTests.swift in Sources */,
-				B4D24AC65038CD35EC9EA29C /* SdkInfoTests.swift in Sources */,
-				484CD9E192B6050EF0BFAB06 /* SessionManagerTests.swift in Sources */,
-				0BE3725632A3D251DE8DC9B6 /* SignalCoverageTests.swift in Sources */,
-				0175EEACB386094C489A97D7 /* StorageTests.swift in Sources */,
-				CBE668E7EA0E3500DE541653 /* DeepLinkDeliveryGuardTests.swift in Sources */,
-				3E60B0112EECB93CDA623676 /* NetworkRequestTests.swift in Sources */,
-				0540FA7547C395C11A985BED /* StubURLProtocol.swift in Sources */,
-				3D975F26276DB6FE1E082698 /* DeepLinkHandlerTests.swift in Sources */,
-				E66011DE43DA5D0CBE8B3181 /* NetworkSendTests.swift in Sources */,
-				378A3680586FB728D9A95AFA /* EnrichmentSenderTests.swift in Sources */,
-				BA9C7019EA42985460DAC358 /* RetryQueueDrainTests.swift in Sources */,
-				1BD51360B6064CF092C5C1E3 /* DeeplinklyEventTests.swift in Sources */,
-				A0196895DFE61D4399339F3F /* DeeplinklyTests.swift in Sources */,
+				E84F74FA53CB5989B9C25B1F /* MethodChannelDeepLinkListenerTests.swift in Sources */,
+				081342E7C45644B79860A554 /* PluginTestSupport.swift in Sources */,
+				0AE4A5457EB91D75F836E614 /* HostStorageTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

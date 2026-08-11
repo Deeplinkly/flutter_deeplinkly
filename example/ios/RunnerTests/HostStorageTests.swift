@@ -1,23 +1,23 @@
 import XCTest
 
-@testable import flutter_deeplinkly
+@testable import Deeplinkly
 
 /// `Keychain`, `DeviceIdManager`, `Prefs` and `TrackingPreferences` — the small
 /// persistence units. Small, but the install id is the thing every attribution
 /// hangs off, so losing or duplicating it splits one user in two.
-final class StorageTests: XCTestCase {
+final class HostStorageTests: XCTestCase {
 
     private let scratchKey = "deeplinkly_test_scratch"
 
     override func setUp() {
         super.setUp()
-        DeeplinklyTestSupport.reset()
+        HostStorageTestSupport.reset()
         Keychain.delete(scratchKey)
     }
 
     override func tearDown() {
         Keychain.delete(scratchKey)
-        DeeplinklyTestSupport.reset()
+        HostStorageTestSupport.reset()
         super.tearDown()
     }
 
@@ -84,7 +84,7 @@ final class StorageTests: XCTestCase {
     /// clearing defaults does not mint a new identity.
     func testDeviceIdSurvivesAUserDefaultsWipe() {
         let first = DeviceIdManager.getOrCreate()
-        DeeplinklyTestSupport.reset()
+        HostStorageTestSupport.reset()
         XCTAssertEqual(DeviceIdManager.getOrCreate(), first)
     }
 
