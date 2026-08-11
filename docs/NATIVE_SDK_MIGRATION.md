@@ -44,6 +44,10 @@ The native SDK's public surface is `Deeplinkly` (facade),
 `DeeplinklyDeepLink`, `DeeplinklyDeepLinkListener`, `DeeplinklyEvent`
 (validation), and the models in `DeeplinklyModels.kt`.
 
+iOS now has the same shape without the repo split: `Deeplinkly.swift` is the
+facade, `FlutterDeeplinklyPlugin` translates onto it, and the public surface is
+`Deeplinkly`, `DeeplinklyDeepLinkListener` and `AttributionLevel`.
+
 ---
 
 ## Constraints — read before changing anything
@@ -103,9 +107,10 @@ module boundary. Rather than widen an internal to public API, `init` records the
 app context always and skips the two `Application`-only features (app-open
 reporting, auto launch-intent capture) if one cannot be reached.
 
-**`logEvent` validation lives in Kotlin, not Dart.** It used to be Dart-only, so
-native integrators got none of it. Dart now forwards and returns native's
-answer. Rules are in `DeeplinklyEvent`.
+**`logEvent` validation lives in the native layer, not Dart.** It used to be
+Dart-only, so native integrators got none of it. Dart now forwards and returns
+native's answer. Rules are in `DeeplinklyEvent` — Kotlin and Swift ports of the
+same table, with the same limits the backend asserts.
 
 **`SdkInfo.VERSION` is derived from Gradle's `VERSION_NAME`**, guarded by
 `SdkInfoTest`. It was a hand-maintained literal and had already drifted —
@@ -164,7 +169,7 @@ manual click on central.sonatype.com because Central releases are immutable.
 ## Verified
 
 Unit: **172 Kotlin tests** in `android_deeplinkly` (168 + 4 version guards),
-1 bridge test in `flutter_deeplinkly`, **395 Swift tests** in
+1 bridge test in `flutter_deeplinkly`, **456 Swift tests** in
 `example/ios/RunnerTests`, 15 Dart tests, `flutter analyze` clean.
 
 On device (Galaxy A33, Android 16), both the Flutter example and the native
@@ -199,10 +204,10 @@ Android was** — do not assume the same shape.
 
 | | Android | iOS (was) | iOS (now) |
 |---|---|---|---|
-| Files importing Flutter | 5 of 28 | 6 of 26 | **3 of 29** |
+| Files importing Flutter | 5 of 28 | 6 of 26 | **3 of 31** |
 | …genuinely coupled | 2 | 6 | **3** |
 | Delivery sites | 1 funnel | 2 direct `postToFlutter` calls | **1 funnel** |
-| Tests | 168 | 0 | **395** |
+| Tests | 168 | 0 | **456** |
 
 The three files that still import Flutter are the three that should: the plugin
 itself, `PasteControlFactory` (a platform view, which cannot move), and
@@ -211,7 +216,7 @@ behind.
 
 ### Done
 
-- **Swift tests.** 395 in `example/ios/RunnerTests`, run with
+- **Swift tests.** 456 in `example/ios/RunnerTests`, run with
   `xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner
   -destination 'platform=iOS Simulator,name=iPhone 17'` from `example/`. They
   reach the SDK via `@testable import flutter_deeplinkly`; the target already
@@ -253,24 +258,23 @@ behind.
 
 Ordered plan with specifics in **`NEXT.md`**. In short:
 
-1. **A `Deeplinkly` facade** mirroring Android's, *before* moving any files.
-   The plugin currently reaches into 24 static entry points across 16 enums;
-   extract as-is and that becomes the SDK's public API. Building the facade
-   first keeps everything else `internal`, so the extraction is a file move
-   rather than a mass visibility edit. It also houses two existing bugs that
-   have no natural home today — most importantly that **iOS `logEvent` enforces
-   none of the validation the public Dart API documents as "enforced
-   natively"**, which Android has had since `DeeplinklyEvent`.
+1. ~~**A `Deeplinkly` facade** mirroring Android's~~ — **done**.
+   `ios/Classes/Deeplinkly.swift`, with the bridge reduced from 24 static entry
+   points across 16 types to one. The public surface is `Deeplinkly`,
+   `DeeplinklyDeepLinkListener` and `AttributionLevel`; everything else is
+   `internal`, so the extraction is a file move rather than a mass visibility
+   edit. It also closed the two bugs that had no home before it: **iOS
+   `logEvent` enforced none of the validation the public Dart API documents as
+   "enforced natively"** (now `DeeplinklyEvent.swift`, ported from Kotlin), and
+   the unsynchronised event-sequence counter.
 2. **The retry-queue key migration** (`sdk_retry_queue` → `dl_pending_retries`),
-   while there is still one repo and a green suite.
-3. **The extraction itself** — including moving ~380 of the 395 tests, which is
+   while there is still one repo and a green suite. **This is what to do next.**
+3. **The extraction itself** — including moving ~440 of the 456 tests, which is
    mechanical but not free.
 
 **`PasteControlFactory` stays in the plugin** either way: it is a `UiKitView`
-and cannot move. That is no longer a blocker, though — `PasteboardHandler` is
-Flutter-free now and the dependency runs plugin → SDK, which is the right
-direction. What is left is deciding which calls become public, which the facade
-answers.
+and cannot move. It is no longer coupled, though — it calls
+`Deeplinkly.handlePaste` and holds no API key of its own.
 
 Distribution is also different: CocoaPods **and** SPM, plus the privacy
 manifest (`PrivacyInfo.xcprivacy`) and the IDFA template need to move with it.
@@ -294,8 +298,6 @@ matches: `dl_event_seq`, `dl_session_id`, `dl_static_profile`,
 
 **Pre-existing, none caused by this work:**
 
-- iOS `_dl_event_seq` uses plain `UserDefaults.integer + 1` — not synchronised,
-  not crash-safe. Android's is `synchronized` + `commit()`; port that.
 - `CHANGELOG.md`'s `## Unreleased` **Breaking** entry (iOS pasteboard default
   flip) is already live in shipped 1.9.0, and
   `.cursor/skills/flutter-sdk/SKILL.md:74,121-123` still documents the old

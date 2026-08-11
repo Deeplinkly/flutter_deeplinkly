@@ -4,147 +4,78 @@ Start-here guide for the next working session. Written 2026-08-11.
 
 **Read first:** `docs/NATIVE_SDK_MIGRATION.md` (status, constraints,
 load-bearing decisions) and `example/ios/RunnerTests/SEAM_TESTS.md` (what the
-395 Swift tests cover, what they don't, and why).
+456 Swift tests cover, what they don't, and why).
 
 ---
 
 ## Where things stand
 
 Android is extracted, published and consumed. iOS has not moved to its own repo
-yet, but the two preconditions are done:
+yet, but the preconditions are done:
 
-- **395 Swift tests**, stable across repeated runs.
-- **The Flutter coupling is gone from the SDK proper.** 26 of 29 files are
+- **456 Swift tests**, stable across repeated runs.
+- **The Flutter coupling is gone from the SDK proper.** 28 of 31 files are
   Flutter-free. The three that import Flutter are exactly the ones that should:
   `FlutterDeeplinklyPlugin`, `PasteControlFactory` (a platform view, cannot
   move), and `MethodChannelDeepLinkListener` (25 lines whose purpose is to be
   left behind).
-
-The migration doc's "step 3" — untangling `PasteboardHandler` from
-`PasteControlFactory` — is **largely resolved already**. `PasteboardHandler` no
-longer imports Flutter, and the dependency runs plugin → SDK, which is the
-correct direction. The only remaining back-reference is a doc comment. What is
-left there is an API-visibility decision, not an untangling job.
+- **The `Deeplinkly` facade exists** and the bridge is a bridge. See below.
 
 ---
 
-## Step 1 — Build the `Deeplinkly` facade (do this first)
+## Step 1 — the `Deeplinkly` facade — **done**
 
-### Why before the extraction, not after
+`ios/Classes/Deeplinkly.swift` mirrors Android's `Deeplinkly` object, and
+`FlutterDeeplinklyPlugin` translates method-channel calls onto it and owns
+nothing. The bridge's reach into SDK internals went from **24 static entry
+points across 16 types to one** (`Logger.d`, which Android's bridge also uses).
 
-The plugin currently reaches into **24 static entry points across 16 enums**:
+The public surface is now `Deeplinkly`, `DeeplinklyDeepLinkListener` and
+`AttributionLevel`; everything else stays `internal`, which is what makes the
+extraction a file move rather than a mass visibility edit.
 
-```
-AppOpenReporter.start              DeviceProfile.primeUserAgent    RetryQueue.retryAll
-AttributionLevel.current           Logger.d                        SdkInfo.elapsedSinceInit
-AttributionLevel.set               Logger.setDebugMode             SdkRuntime.setListener
-AttributionStore.get               NetworkUtils.generateLink       SessionManager.currentSessionId
-AttributionStore.saveOnce          NetworkUtils.logEvent           StartupEnrichment.schedule
-DeepLinkHandler.drainPendingResolves  PasteboardHandler.check      TrackingPreferences.setTrackingDisabled
-DeepLinkHandler.handle             PasteboardHandler.handle        UserIdManager.updateCustomUserId
-DeviceIdManager.getOrCreate        PasteboardHandler.setCheckEnabled
-                                   PasteboardHandler.willShowBanner
-```
+All three gaps it was meant to house are closed:
 
-Extract as-is and *that* becomes the SDK's public API. It isn't an API, it's
-internals. Android's equivalent is one `object Deeplinkly` with ~17 members, and
-the Android bridge "translates method-channel calls onto the `Deeplinkly` facade
-and owns nothing."
+- **`logEvent` validation** — `DeeplinklyEvent.swift`, ported from Kotlin.
+  `DeeplinklyEventTests` is the table.
+- **`_dl_event_seq`** — read-modify-write under a lock, with `synchronize()`
+  standing in for Android's `commit()`. `testConcurrentEventsGetDistinctSequenceNumbers`
+  is the regression pin.
+- **`setTrackingEnabled`** — surfaced on the public Dart API; it was a Dart
+  export, not a facade concern.
 
-Doing the facade first means:
+Two decisions worth knowing:
 
-- Only the facade, `DeeplinklyDeepLinkListener` and the models go `public`.
-  Everything else stays `internal`, so the extraction becomes a **file move**
-  rather than a mass visibility edit.
-- The two platforms stay symmetric, which is the entire point of the exercise.
-- It is verified against the existing 395 tests **in one repo**, not across two
-  after the split.
+- **`initialize()` reads `Bundle.main` only.** The bridge used to check its own
+  bundle first, which resolves to the app bundle when statically linked and to a
+  bundle that never carries the key otherwise — so it was dead weight. `LinkDomains`
+  and `AttributionLevel` already read `Bundle.main`, and that is where the docs
+  put the key. `initialize(apiKey:)` covers hosts that hold it elsewhere.
+- **The pre-init link buffer moved into the facade** (`handleLink` before
+  `initialize` buffers; `initialize` flushes it). It used to be the plugin's
+  `pendingUniversalLink`, and `getInitialUniversalLink` now answers from
+  `Deeplinkly.takePendingLink()`.
 
-### The surface to mirror
+---
 
-Source of truth:
-`android_deeplinkly/deeplinkly/src/main/kotlin/com/deeplinkly/android_deeplinkly/Deeplinkly.kt`
+### Why it came before the extraction
 
-| Android | iOS delegates to | Notes |
-|---|---|---|
-| `init(context, autoCaptureLaunchIntents)` | plugin `bootstrap()` body | iOS reads `DeeplinklyApiKey` from `Bundle.main`; no `Context`. Must stay idempotent. |
-| `setDeepLinkListener(listener)` | `SdkRuntime.setListener` | Already exists. |
-| `onActivityLaunch` / `onNewIntent` | `handleUniversalLink(_:)` / open-URL | Platform-shaped; see "expected asymmetry" below. |
-| `onForeground()` | `AppOpenReporter.report` | |
-| `shutdown()` | — | No iOS equivalent yet; decide whether to add. |
-| `getInstallAttribution()` | `AttributionStore.get` | |
-| `getDeeplinklyId()` | `DeviceIdManager.getOrCreate` | |
-| `setUserId(_:)` | `UserIdManager.updateCustomUserId` | |
-| `logEvent(...)` | `NetworkUtils.logEvent` + validation | **See gap 1.** |
-| `generateLink(...)` | `NetworkUtils.generateLink` | |
-| `setTrackingEnabled` / `isTrackingEnabled` | `TrackingPreferences` | **See gap 3.** |
-| `setAttributionLevel` / `getAttributionLevel` | `AttributionLevel` | |
-| `setDebugMode(_:)` | `Logger.setDebugMode` | |
-| `isEnabled` | plugin's `sdkEnabled` | Currently private to the plugin. |
-| `version` | `SdkInfo.version` | |
+Kept because the same reasoning applies to anything else tempted to move first.
+
+The bridge reached into 24 static entry points across 16 enums. Extract as-is
+and *that* becomes the SDK's public API — and it isn't an API, it's internals.
+Building the facade first meant only three types went `public`, the two
+platforms stayed symmetric, and the whole thing was verified against the
+existing suite **in one repo** rather than across two after the split.
 
 **Expected asymmetry — do not try to force parity.** Android has
-Activity/Intent entry points iOS cannot have. iOS has a pasteboard surface
-Android has no use for (`checkPasteboardNow`, `willShowBanner`,
-`setCheckPasteboardOnInstall`, and `handle(itemProviders:)` for the paste
-control). Both are correct. Only the *shared* concepts need to line up.
-
-### Two gaps to close while doing it
-
-Each is an existing bug with no natural home today. The facade is the home, and
-Android already solved each one — port, don't redesign.
-
-**Gap 1 — iOS `logEvent` performs no validation, and the public Dart API says
-it does.**
-
-`lib/flutter_deeplinkly.dart:180-196` documents the full contract ("The rules
-are enforced natively rather than here") and lists every limit. Android enforces
-them in `DeeplinklyEvent.validate`. iOS enforces **none** of them — the plugin
-only trims the name and checks it is non-empty. So on iOS an app can today send
-100 parameters, a 10KB name, or `_dl_`-prefixed keys that smuggle past the
-backend's parameter budget, and they go straight to a production backend.
-
-This is the strongest single argument for the facade. Port
-`DeeplinklyEvent.validate` to Swift verbatim; the limits are asserted by the
-backend too, so changing one without changing it there starts silently
-truncating:
-
-```
-MAX_NAME_LENGTH = 64      MAX_PARAM_KEY_LENGTH = 64
-MAX_PARAMS_COUNT = 25     MAX_PARAM_VALUE_LENGTH = 256
-RESERVED_PARAM_PREFIX = "_dl_"
-```
-
-Note the subtleties: keys are trimmed *for the check only* and forwarded as
-supplied; `List`/`Map` values are measured as compact-JSON encoded length;
-anything not `String`/number/`Bool`/`List`/`Map` is rejected.
-
-**Gap 2 — `_dl_event_seq` is unsynchronised and not crash-safe.**
-
-`FlutterDeeplinklyPlugin.swift` does a plain
-`UserDefaults.integer(forKey:) + 1`. Android does the read-modify-write under a
-lock and `commit()`s it. The counter belongs in the facade, not the bridge.
-
-~~**Gap 3 — `setTrackingEnabled` is documented but unreachable.**~~ **Done** —
-surfaced on `FlutterDeeplinkly` and the orphan on
-`MethodChannelFlutterDeeplinkly` removed. It was never a facade concern; it was
-a Dart export. `test/tracking_test.dart` pins the `enabled` → `disabled`
-inversion.
-
-### How to verify
-
-The facade is a thin delegating layer; the 395 tests already cover the
-internals it calls. So:
-
-- Existing tests must stay green untouched — that is the regression signal.
-- Add tests for the facade's *own* logic only: idempotent `init`, the event
-  validation table, the event-sequence counter under concurrency.
-- `DeeplinklyEvent`'s Swift twin deserves a full table test, mirroring
-  Android's.
+Activity/Intent entry points iOS cannot have; iOS has a pasteboard surface
+Android has no use for. Both are correct. Only the *shared* concepts line up,
+and `Deeplinkly.swift`'s doc comment says which is which.
 
 ---
 
-## Step 2 — Retry-queue key migration
+## Step 2 — Retry-queue key migration (do this next)
 
 iOS stores the retry queue under `sdk_retry_queue`; Android uses
 `dl_pending_retries`, and 13 other keys already use the `dl_` prefix.
@@ -162,13 +93,13 @@ constant.
 
 ## Step 3 — The extraction
 
-Only after 1 and 2.
+Only after 2.
 
-**What moves:** the 26 Flutter-free files in `ios/Classes/`.
+**What moves:** the 28 Flutter-free files in `ios/Classes/`.
 **What stays:** `FlutterDeeplinklyPlugin`, `PasteControlFactory`,
 `MethodChannelDeepLinkListener`.
 
-**The tests move too — budget for it.** Roughly 380 of the 395 are `@testable`
+**The tests move too — budget for it.** Roughly 440 of the 456 are `@testable`
 against internals that are leaving, so they move near-verbatim, along with
 `StubURLProtocol.swift` and `TestSupport.swift`. Only the plugin-level ones
 stay. Mechanical, not risky, but it is a real chunk of the work rather than an
@@ -182,8 +113,8 @@ with it. SPM also gives the new repo a test target essentially free
 **Tooling:** `tool/gen_signals.dart` needs an `--ios=<path>` flag mirroring the
 existing `--android=`. `tool/signals.json` stays canonical here.
 
-Then reduce the plugin to a bridge, mirroring `flutter_deeplinkly/android/`'s
-two files.
+The plugin is already a bridge — step 1 did that — so what is left here is the
+file move itself, not another round of untangling.
 
 ---
 
