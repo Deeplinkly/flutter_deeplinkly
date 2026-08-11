@@ -19,14 +19,9 @@ import UIKit
 /// its availability back over the per-view channel so Dart can decide.
 class PasteControlFactory: NSObject, FlutterPlatformViewFactory {
     private let messenger: FlutterBinaryMessenger
-    private let apiKeyProvider: () -> String
 
-    init(
-        messenger: FlutterBinaryMessenger,
-        apiKeyProvider: @escaping () -> String
-    ) {
+    init(messenger: FlutterBinaryMessenger) {
         self.messenger = messenger
-        self.apiKeyProvider = apiKeyProvider
         super.init()
     }
 
@@ -37,8 +32,7 @@ class PasteControlFactory: NSObject, FlutterPlatformViewFactory {
             frame: frame,
             viewId: viewId,
             args: args as? [String: Any] ?? [:],
-            messenger: messenger,
-            apiKeyProvider: apiKeyProvider
+            messenger: messenger
         )
     }
 
@@ -56,8 +50,7 @@ class PasteControlView: NSObject, FlutterPlatformView {
         frame: CGRect,
         viewId: Int64,
         args: [String: Any],
-        messenger: FlutterBinaryMessenger,
-        apiKeyProvider: @escaping () -> String
+        messenger: FlutterBinaryMessenger
     ) {
         container = PasteResponderView(frame: frame)
         viewChannel = FlutterMethodChannel(
@@ -65,10 +58,7 @@ class PasteControlView: NSObject, FlutterPlatformView {
         super.init()
 
         container.onPaste = { [weak self] providers in
-            PasteboardHandler.handle(
-                itemProviders: providers,
-                apiKey: apiKeyProvider()
-            ) { handled in
+            Deeplinkly.handlePaste(itemProviders: providers) { handled in
                 // Tell the button's owner what happened so it can dismiss
                 // itself or show "that link wasn't one of ours". The resolved
                 // link itself still arrives on deepLinkStream like any other.

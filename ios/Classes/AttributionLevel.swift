@@ -13,7 +13,7 @@ import Foundation
 /// generated from `tool/signals.json` so this file, Android's
 /// `AttributionLevel.kt` and the backend cannot disagree about what a given
 /// consent choice means.
-enum AttributionLevel: String, CaseIterable {
+public enum AttributionLevel: String, CaseIterable {
     /// Everything the SDK collects. The default, and the pre-1.9.0 behaviour.
     case full
 

@@ -5,7 +5,7 @@ was safe and this one would not otherwise be: Android had 168 tests checking
 every step, iOS had none. Deferred-attribution bugs fail silently and users do
 not report them.
 
-395 tests. See `docs/NATIVE_SDK_MIGRATION.md` for the extraction plan these
+456 tests. See `docs/NATIVE_SDK_MIGRATION.md` for the extraction plan these
 support.
 
 ## Running them
@@ -58,6 +58,16 @@ It adds what is missing and prunes what is gone.
 | `RetryQueueDrainTests` | `RetryQueue.retryAll` | Per-type dispatch, `refilter`, the TTL in both directions. |
 | `EnrichmentSenderTests` | `EnrichmentSender` | Payload assembly, the attribution gate, the dedupe latch. |
 | `DeepLinkHandlerTests` | `DeepLinkHandler` | The resolve path end to end: URL in, `onDeepLink` out. |
+| `DeeplinklyEventTests` | `DeeplinklyEvent` | The `logEvent` validation table, mirroring Android's. |
+| `DeeplinklyTests` | `Deeplinkly` | The facade's *own* logic only — see below. |
+
+`DeeplinklyTests` deliberately covers a narrow slice. The facade is a thin
+delegating layer and everything behind it already has a suite, so re-testing the
+delegation would only pin it twice. What is new there, and therefore what is
+tested: the initialisation latch, the pre-init link buffer, the event-sequence
+counter (including that concurrent events get distinct numbers, which is the bug
+the old inline `UserDefaults.integer + 1` had), and that a rejected event never
+reaches the network.
 
 `SignalCoverageTests` is the one worth knowing about if you read nothing else.
 `SignalCatalogue.allows` is fail-closed, so a signal a collector emits but
@@ -167,6 +177,14 @@ reports.
   has finished; an `isEmpty` assertion would blame the wrong test. Suites that
   leave work in flight (`DeepLinkHandlerTests`) settle briefly in `tearDown`
   while their stubs are still installed.
+- **`SdkRuntime`'s pending buffer survives `reset()`.** `clearListener` drops
+  the listener but not the links buffered behind it, and a resolve that
+  completes with nothing attached leaves one there for whichever test attaches
+  next. So attach the listener *first*, `reset()` the recorder, and only then
+  deliver — asserting on the recorder's full contents straight after attaching
+  counts someone else's link. (This is the same hazard as the retry-queue rule
+  above, one layer up; it is not cleared centrally because a test that wants to
+  observe a flush needs the buffer intact.)
 - **Test comments say why the behaviour matters**, not what the assertion does.
   Most of them are recording a bug that was already paid for once.
 

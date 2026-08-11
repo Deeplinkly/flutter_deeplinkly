@@ -41,6 +41,9 @@ enum DeeplinklyTestSupport {
         "dl_first_app_version", "dl_first_open_at", "dl_webview_user_agent",
         // AppOpenReporter
         "dl_last_open_ping_at",
+        // Deeplinkly (the facade owns the event sequence counter; it used to
+        // be written inline by the plugin, which is why it was missing here)
+        "dl_event_seq",
         // PasteboardHandler
         "deeplinkly_pasteboard_checked", "deeplinkly_check_pasteboard_on_install",
     ]
@@ -62,6 +65,7 @@ enum DeeplinklyTestSupport {
         DeviceProfile.invalidate()
         SdkRuntime.clearListener()
         DeepLinkDeliveryGuard.reset()
+        Deeplinkly.resetForTesting()
     }
 
     /// The link domain configured in the test host's Info.plist.

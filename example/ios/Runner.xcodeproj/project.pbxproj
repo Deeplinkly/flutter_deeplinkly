@@ -14,6 +14,7 @@
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		15259199AC9AE974C3EC550C /* SdkRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051A3C0B07A6CF3DFF160ED3 /* SdkRuntimeTests.swift */; };
 		1A4B918638937FBFA9836BA2 /* AppOpenReporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EABBF4038F97D0365C14222 /* AppOpenReporterTests.swift */; };
+		1BD51360B6064CF092C5C1E3 /* DeeplinklyEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE6C47B591771895F0C695D5 /* DeeplinklyEventTests.swift */; };
 		2CB5408F58FCBAC3FFD6D1AF /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B743BC210D227FEA7E6E25EE /* TestSupport.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		378A3680586FB728D9A95AFA /* EnrichmentSenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5656FE09CEEE438EEEA10A0F /* EnrichmentSenderTests.swift */; };
@@ -28,6 +29,7 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		A0196895DFE61D4399339F3F /* DeeplinklyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E1C8B6D6E92C0A90F0CA97 /* DeeplinklyTests.swift */; };
 		A75AB7EF95082554B7ADC4BE /* AttributionLevelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62AACF54BAD7D3B4F9C474A /* AttributionLevelTests.swift */; };
 		AE7CAD024C53AE0723B9B9F9 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50ED8A9C8CCAB019EC5A6934 /* Pods_RunnerTests.framework */; };
 		B4D24AC65038CD35EC9EA29C /* SdkInfoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0845C606708CDEC480A931F /* SdkInfoTests.swift */; };
@@ -72,6 +74,7 @@
 		1352AAE1F5F222C9C9A0F509 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
+		21E1C8B6D6E92C0A90F0CA97 /* DeeplinklyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeeplinklyTests.swift; sourceTree = "<group>"; };
 		25D46190C9F0B315AE044860 /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		265DC9F480E3E02ED692BF71 /* AttributionStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttributionStoreTests.swift; sourceTree = "<group>"; };
 		2EABBF4038F97D0365C14222 /* AppOpenReporterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppOpenReporterTests.swift; sourceTree = "<group>"; };
@@ -108,6 +111,7 @@
 		C1C402E7565B3A8FAAE85E4E /* SessionManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionManagerTests.swift; sourceTree = "<group>"; };
 		C224702578BCCB47B30C40E0 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		C62AACF54BAD7D3B4F9C474A /* AttributionLevelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttributionLevelTests.swift; sourceTree = "<group>"; };
+		CE6C47B591771895F0C695D5 /* DeeplinklyEventTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeeplinklyEventTests.swift; sourceTree = "<group>"; };
 		D66F9236AB7524588EC7B9B2 /* RetryQueueDrainTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RetryQueueDrainTests.swift; sourceTree = "<group>"; };
 		DDD341FA274974F79625B79D /* DeepLinkHandlerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeepLinkHandlerTests.swift; sourceTree = "<group>"; };
 		E787AE5DE92AB2CC4F43C3F5 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
@@ -186,6 +190,8 @@
 				09D1AA2DA229D26589CE9815 /* NetworkSendTests.swift */,
 				5656FE09CEEE438EEEA10A0F /* EnrichmentSenderTests.swift */,
 				D66F9236AB7524588EC7B9B2 /* RetryQueueDrainTests.swift */,
+				CE6C47B591771895F0C695D5 /* DeeplinklyEventTests.swift */,
+				21E1C8B6D6E92C0A90F0CA97 /* DeeplinklyTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -466,6 +472,8 @@
 				E66011DE43DA5D0CBE8B3181 /* NetworkSendTests.swift in Sources */,
 				378A3680586FB728D9A95AFA /* EnrichmentSenderTests.swift in Sources */,
 				BA9C7019EA42985460DAC358 /* RetryQueueDrainTests.swift in Sources */,
+				1BD51360B6064CF092C5C1E3 /* DeeplinklyEventTests.swift in Sources */,
+				A0196895DFE61D4399339F3F /* DeeplinklyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

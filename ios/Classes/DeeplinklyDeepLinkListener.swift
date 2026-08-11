@@ -11,7 +11,7 @@ import Foundation
 ///
 /// Mirrors Android's `DeeplinklyDeepLinkListener`, which is what let the same
 /// files there drop their `MethodChannel` parameter and extract cleanly.
-protocol DeeplinklyDeepLinkListener: AnyObject {
+public protocol DeeplinklyDeepLinkListener: AnyObject {
     /// - Parameter payload: the `{click_id, params, probability}` envelope,
     ///   forwarded exactly as it was resolved. The typed accessors read from
     ///   this map; parsing and re-serialising it would put a lossy round trip
