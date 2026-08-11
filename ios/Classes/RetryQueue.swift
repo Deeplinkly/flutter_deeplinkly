@@ -1,7 +1,8 @@
 import Foundation
 
 enum RetryQueue {
-    private static let key = "sdk_retry_queue"
+    private static let key = "dl_pending_retries"
+    private static let legacyKey = "sdk_retry_queue"
     private static let maxCount = 50
 
     /// How long a queued payload stays worth sending.
@@ -13,7 +14,7 @@ enum RetryQueue {
 
     // Enqueue payload for retry
     static func enqueue(type: String, payload: [String: Any]) {
-        var queue = (UserDefaults.standard.array(forKey: key) as? [String]) ?? []
+        var queue = items()
         let item: [String: Any] = [
             "type": type,
             "payload": payload,
@@ -31,7 +32,21 @@ enum RetryQueue {
 
     // Get all items
     static func items() -> [String] {
+        migrateLegacyQueueIfNeeded()
         return (UserDefaults.standard.array(forKey: key) as? [String]) ?? []
+    }
+
+    /// Moves queues written by iOS SDK versions that predate cross-platform
+    /// key alignment. The canonical value wins if both keys exist: that state
+    /// means a previous migration wrote the new key but stopped before cleanup.
+    private static func migrateLegacyQueueIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard let legacyQueue = defaults.object(forKey: legacyKey) else { return }
+
+        if defaults.object(forKey: key) == nil {
+            defaults.set(legacyQueue, forKey: key)
+        }
+        defaults.removeObject(forKey: legacyKey)
     }
 
     // Remove a specific item

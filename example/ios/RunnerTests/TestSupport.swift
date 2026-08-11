@@ -23,9 +23,8 @@ enum DeeplinklyTestSupport {
     static let persistedKeys: [String] = [
         // DeepLinkQueue
         "dl_pending_resolve",
-        // RetryQueue — the one cross-platform key divergence; Android calls
-        // this `dl_pending_retries`. See docs/NATIVE_SDK_MIGRATION.md.
-        "sdk_retry_queue",
+        // RetryQueue (canonical key followed by the pre-migration iOS key)
+        "dl_pending_retries", "sdk_retry_queue",
         // AttributionLevel
         "dl_attribution_level",
         // TrackingPreferences

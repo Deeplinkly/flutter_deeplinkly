@@ -5,7 +5,7 @@ was safe and this one would not otherwise be: Android had 168 tests checking
 every step, iOS had none. Deferred-attribution bugs fail silently and users do
 not report them.
 
-456 tests. See `docs/NATIVE_SDK_MIGRATION.md` for the extraction plan these
+458 tests. See `docs/NATIVE_SDK_MIGRATION.md` for the extraction plan these
 support.
 
 ## Running them

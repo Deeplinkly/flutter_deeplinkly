@@ -4,7 +4,7 @@ Start-here guide for the next working session. Written 2026-08-11.
 
 **Read first:** `docs/NATIVE_SDK_MIGRATION.md` (status, constraints,
 load-bearing decisions) and `example/ios/RunnerTests/SEAM_TESTS.md` (what the
-456 Swift tests cover, what they don't, and why).
+458 Swift tests cover, what they don't, and why).
 
 ---
 
@@ -13,13 +13,15 @@ load-bearing decisions) and `example/ios/RunnerTests/SEAM_TESTS.md` (what the
 Android is extracted, published and consumed. iOS has not moved to its own repo
 yet, but the preconditions are done:
 
-- **456 Swift tests**, stable across repeated runs.
+- **458 Swift tests**, stable across repeated runs.
 - **The Flutter coupling is gone from the SDK proper.** 28 of 31 files are
   Flutter-free. The three that import Flutter are exactly the ones that should:
   `FlutterDeeplinklyPlugin`, `PasteControlFactory` (a platform view, cannot
   move), and `MethodChannelDeepLinkListener` (25 lines whose purpose is to be
   left behind).
 - **The `Deeplinkly` facade exists** and the bridge is a bridge. See below.
+- **The retry queue uses the cross-platform key** `dl_pending_retries`, with a
+  tested migration from the former iOS key `sdk_retry_queue`.
 
 ---
 
@@ -75,23 +77,24 @@ and `Deeplinkly.swift`'s doc comment says which is which.
 
 ---
 
-## Step 2 — Retry-queue key migration (do this next)
+## Step 2 — Retry-queue key migration — **done**
 
-iOS stores the retry queue under `sdk_retry_queue`; Android uses
-`dl_pending_retries`, and 13 other keys already use the `dl_` prefix.
-Canonicalise on the Android name, so **iOS is the side that migrates**.
+iOS stored the retry queue under `sdk_retry_queue`; Android already used
+`dl_pending_retries`, and 13 other keys use the `dl_` prefix. The queue is now
+canonicalised on the Android name, so **iOS is the side that migrates**.
 
-Small and independent, but do it while there is one repo and a green suite. It
-needs a real migration (read the old key, move, delete) — persisted state must
-survive upgrades.
+`RetryQueue.items()` now moves the old value to `dl_pending_retries` before
+deleting `sdk_retry_queue`; every queue operation passes through that read.
+The canonical value wins if both keys exist, which safely completes a migration
+interrupted after the new value was written but before cleanup.
 
-`RetryQueueTests.testStorageKeyIsStable` will fail when you do this. That is
-deliberate: it is the prompt to write the migration rather than just rename the
-constant.
+`RetryQueueTests.testStorageKeyIsStable` now pins the canonical key, while the
+legacy-migration and interrupted-migration tests pin payload survival and
+cleanup. `TestSupport.persistedKeys` clears both keys between tests.
 
 ---
 
-## Step 3 — The extraction
+## Step 3 — The extraction (do this next)
 
 Only after 2.
 
@@ -99,7 +102,7 @@ Only after 2.
 **What stays:** `FlutterDeeplinklyPlugin`, `PasteControlFactory`,
 `MethodChannelDeepLinkListener`.
 
-**The tests move too — budget for it.** Roughly 440 of the 456 are `@testable`
+**The tests move too — budget for it.** Roughly 440 of the 458 are `@testable`
 against internals that are leaving, so they move near-verbatim, along with
 `StubURLProtocol.swift` and `TestSupport.swift`. Only the plugin-level ones
 stay. Mechanical, not risky, but it is a real chunk of the work rather than an

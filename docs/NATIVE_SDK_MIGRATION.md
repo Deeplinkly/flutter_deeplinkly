@@ -169,7 +169,7 @@ manual click on central.sonatype.com because Central releases are immutable.
 ## Verified
 
 Unit: **172 Kotlin tests** in `android_deeplinkly` (168 + 4 version guards),
-1 bridge test in `flutter_deeplinkly`, **456 Swift tests** in
+1 bridge test in `flutter_deeplinkly`, **458 Swift tests** in
 `example/ios/RunnerTests`, 15 Dart tests, `flutter analyze` clean.
 
 On device (Galaxy A33, Android 16), both the Flutter example and the native
@@ -207,7 +207,7 @@ Android was** — do not assume the same shape.
 | Files importing Flutter | 5 of 28 | 6 of 26 | **3 of 31** |
 | …genuinely coupled | 2 | 6 | **3** |
 | Delivery sites | 1 funnel | 2 direct `postToFlutter` calls | **1 funnel** |
-| Tests | 168 | 0 | **456** |
+| Tests | 168 | 0 | **458** |
 
 The three files that still import Flutter are the three that should: the plugin
 itself, `PasteControlFactory` (a platform view, which cannot move), and
@@ -216,7 +216,7 @@ behind.
 
 ### Done
 
-- **Swift tests.** 456 in `example/ios/RunnerTests`, run with
+- **Swift tests.** 458 in `example/ios/RunnerTests`, run with
   `xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner
   -destination 'platform=iOS Simulator,name=iPhone 17'` from `example/`. They
   reach the SDK via `@testable import flutter_deeplinkly`; the target already
@@ -267,10 +267,12 @@ Ordered plan with specifics in **`NEXT.md`**. In short:
    `logEvent` enforced none of the validation the public Dart API documents as
    "enforced natively"** (now `DeeplinklyEvent.swift`, ported from Kotlin), and
    the unsynchronised event-sequence counter.
-2. **The retry-queue key migration** (`sdk_retry_queue` → `dl_pending_retries`),
-   while there is still one repo and a green suite. **This is what to do next.**
-3. **The extraction itself** — including moving ~440 of the 456 tests, which is
-   mechanical but not free.
+2. ~~**The retry-queue key migration** (`sdk_retry_queue` →
+   `dl_pending_retries`)~~ — **done**. First access moves and deletes the legacy
+   value; tests cover both a normal upgrade and cleanup after an interrupted
+   migration.
+3. **The extraction itself** — including moving ~440 of the 458 tests, which is
+   mechanical but not free. **This is what to do next.**
 
 **`PasteControlFactory` stays in the plugin** either way: it is a `UiKitView`
 and cannot move. It is no longer coupled, though — it calls
@@ -279,11 +281,11 @@ and cannot move. It is no longer coupled, though — it calls
 Distribution is also different: CocoaPods **and** SPM, plus the privacy
 manifest (`PrivacyInfo.xcprivacy`) and the IDFA template need to move with it.
 
-**Key alignment folds in here.** The only real cross-platform storage-key
-divergence is the retry queue: `dl_pending_retries` (Android) vs
-`sdk_retry_queue` (iOS). Canonicalise on the Android name — 13 other keys use
-the `dl_` prefix — so iOS is the side that migrates. Everything else already
-matches: `dl_event_seq`, `dl_session_id`, `dl_static_profile`,
+**Key alignment is done.** The only real cross-platform storage-key divergence
+was the retry queue: `dl_pending_retries` (Android) vs `sdk_retry_queue` (iOS).
+Both now use the Android name — 13 other keys use the `dl_` prefix — and iOS
+migrates the old value on first access. Everything else already matches:
+`dl_event_seq`, `dl_session_id`, `dl_static_profile`,
 `initial_attribution`, `tracking_disabled`, `custom_user_id`,
 `deeplinkly_device_id`, and the rest.
 

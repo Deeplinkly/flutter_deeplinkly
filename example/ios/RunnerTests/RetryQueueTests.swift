@@ -4,12 +4,8 @@ import XCTest
 
 /// Durable storage for payloads that failed to send.
 ///
-/// Note the storage key: `sdk_retry_queue`, where Android uses
-/// `dl_pending_retries`. That is the one real cross-platform divergence, and
-/// canonicalising on the Android name is a migration the iOS extraction owns —
-/// see docs/NATIVE_SDK_MIGRATION.md. `testStorageKeyIsStable` will fail when
-/// that happens, which is the intended prompt to write the migration rather
-/// than to just rename the constant.
+/// iOS used to store this under `sdk_retry_queue`. It now shares Android's
+/// `dl_pending_retries` key and migrates the legacy value on first access.
 final class RetryQueueTests: XCTestCase {
 
     override func setUp() {
@@ -110,7 +106,7 @@ final class RetryQueueTests: XCTestCase {
         let items = RetryQueue.items()
         // Two enqueues a moment apart differ only in queued_at; force the
         // genuinely-identical case the dedupe-free queue can produce.
-        UserDefaults.standard.set([items[0], items[0]], forKey: "sdk_retry_queue")
+        UserDefaults.standard.set([items[0], items[0]], forKey: "dl_pending_retries")
 
         RetryQueue.remove(items[0])
         XCTAssertEqual(RetryQueue.items().count, 1)
@@ -182,7 +178,7 @@ final class RetryQueueTests: XCTestCase {
     /// left in place for a later launch to reconsider.
     func testMalformedItemsAreSkippedAndKept() {
         UserDefaults.standard.set(
-            ["not json at all", "{\"payload\":{}}"], forKey: "sdk_retry_queue")
+            ["not json at all", "{\"payload\":{}}"], forKey: "dl_pending_retries")
 
         RetryQueue.retryAll(apiKey: "test-key")
 
@@ -194,7 +190,7 @@ final class RetryQueueTests: XCTestCase {
     /// `remove` a successful send uses.
     func testUnknownTypeIsDroppedRatherThanRetriedForever() {
         UserDefaults.standard.set(
-            ["{\"type\":\"mystery\",\"payload\":{}}"], forKey: "sdk_retry_queue")
+            ["{\"type\":\"mystery\",\"payload\":{}}"], forKey: "dl_pending_retries")
 
         RetryQueue.retryAll(apiKey: "test-key")
 
@@ -227,18 +223,41 @@ final class RetryQueueTests: XCTestCase {
         guard let data = try? JSONSerialization.data(withJSONObject: item),
             let encoded = String(data: data, encoding: .utf8)
         else { return XCTFail("could not encode fixture") }
-        UserDefaults.standard.set([encoded], forKey: "sdk_retry_queue")
+        UserDefaults.standard.set([encoded], forKey: "dl_pending_retries")
     }
 
     // MARK: - Storage contract
 
-    /// Persisted state on live installs. Renaming without a migration abandons
-    /// every queued payload.
+    /// New writes use the cross-platform key and never recreate the legacy key.
     func testStorageKeyIsStable() {
         RetryQueue.enqueue(type: "event", payload: [:])
         XCTAssertNotNil(
-            UserDefaults.standard.array(forKey: "sdk_retry_queue"),
-            "the retry queue moved off sdk_retry_queue without a migration")
+            UserDefaults.standard.array(forKey: "dl_pending_retries"),
+            "the retry queue is no longer stored under dl_pending_retries")
+        XCTAssertNil(UserDefaults.standard.object(forKey: "sdk_retry_queue"))
+    }
+
+    /// Payloads queued by an older iOS SDK survive the key rename. Writing the
+    /// canonical value before deleting the old one also makes an interrupted
+    /// migration recoverable on the next access.
+    func testLegacyStorageIsMovedAndDeletedOnFirstAccess() {
+        let legacyItems = ["legacy item"]
+        UserDefaults.standard.set(legacyItems, forKey: "sdk_retry_queue")
+
+        XCTAssertEqual(RetryQueue.items(), legacyItems)
+        XCTAssertEqual(
+            UserDefaults.standard.array(forKey: "dl_pending_retries") as? [String], legacyItems)
+        XCTAssertNil(UserDefaults.standard.object(forKey: "sdk_retry_queue"))
+    }
+
+    /// If cleanup was interrupted after the canonical write, retrying the
+    /// migration must not duplicate or replace the canonical queue.
+    func testInterruptedMigrationKeepsCanonicalStorage() {
+        UserDefaults.standard.set(["legacy item"], forKey: "sdk_retry_queue")
+        UserDefaults.standard.set(["canonical item"], forKey: "dl_pending_retries")
+
+        XCTAssertEqual(RetryQueue.items(), ["canonical item"])
+        XCTAssertNil(UserDefaults.standard.object(forKey: "sdk_retry_queue"))
     }
 
     /// The three types `retryAll` dispatches on. A payload stored under a type

@@ -45,9 +45,9 @@ final class RetryQueueDrainTests: XCTestCase {
             let encoded = String(data: data, encoding: .utf8)
         else { return XCTFail("could not encode fixture") }
 
-        var queue = UserDefaults.standard.array(forKey: "sdk_retry_queue") as? [String] ?? []
+        var queue = UserDefaults.standard.array(forKey: "dl_pending_retries") as? [String] ?? []
         queue.append(encoded)
-        UserDefaults.standard.set(queue, forKey: "sdk_retry_queue")
+        UserDefaults.standard.set(queue, forKey: "dl_pending_retries")
     }
 
     // MARK: - Dispatch
@@ -213,7 +213,7 @@ final class RetryQueueDrainTests: XCTestCase {
     /// not be treated as infinitely old and swept on sight.
     func testAnItemWithNoTimestampIsSentRatherThanSwept() {
         let item = "{\"type\":\"enrichment\",\"payload\":{\"click_id\":\"c1\"}}"
-        UserDefaults.standard.set([item], forKey: "sdk_retry_queue")
+        UserDefaults.standard.set([item], forKey: "dl_pending_retries")
 
         drain()
 
@@ -244,7 +244,7 @@ final class RetryQueueDrainTests: XCTestCase {
         let item = """
             {"type":"enrichment","payload":"{\\"click_id\\":\\"c1\\"}"}
             """
-        UserDefaults.standard.set([item], forKey: "sdk_retry_queue")
+        UserDefaults.standard.set([item], forKey: "dl_pending_retries")
 
         drain()
 
