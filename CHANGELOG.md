@@ -1,5 +1,33 @@
 ## Unreleased
 
+### Changed
+
+- **Android: the SDK no longer depends on Flutter.** Everything below the
+  method channel — deep link resolution, the install referrer, attribution,
+  the queues, retries, device signals and networking — is now plain Android,
+  reachable through a new `Deeplinkly` facade. `FlutterDeeplinklyPlugin` is a
+  translation layer over it and is the only file that imports `io.flutter`.
+
+  This is groundwork for shipping a standalone native Android SDK from the
+  same source, so the two can never drift. **Nothing changes for apps using
+  this plugin**: same Dart API, same `deeplinkly/channel` methods, same
+  `{click_id, params, probability}` envelope, same
+  `com.deeplinkly.sdk.*` manifest keys, and no persisted state is renamed —
+  install id, first-touch attribution, session and event sequence all survive
+  the upgrade.
+
+  Internally, `SdkRuntime` now holds a `DeeplinklyDeepLinkListener` rather than
+  a `MethodChannel`, and the `MethodChannel` parameter that was threaded
+  through `DeepLinkHandler`, `InstallReferrerHandler` and `QueueProcessor` is
+  gone — it was only ever null-checked, never used to send anything.
+
+- **`logEvent` validation moved from Dart to the native layer.** The rules were
+  Dart-only, so they applied to Flutter callers and nobody else. They are now
+  enforced where the event is actually assembled, which is the copy every host
+  runs. Identical rules, identical `false` for a rejected event, and still no
+  network call — the only difference is that a rejection now crosses the
+  channel before answering.
+
 ### Breaking
 
 - **iOS: the automatic pasteboard read is now on by default.** Deferred deep

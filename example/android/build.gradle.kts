@@ -2,6 +2,21 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Development seam for building this example against a locally
+        // published native SDK:
+        //
+        //     cd ../../android_deeplinkly && ./gradlew publishToMavenLocal
+        //
+        // It has to be here rather than in the plugin's own build.gradle: the
+        // app resolves the plugin's transitive dependencies with *its* list of
+        // repositories, so adding it only on the plugin side leaves
+        // :app:debugRuntimeClasspath unable to find the SDK.
+        //
+        // Consulted last, so once the SDK is on Maven Central that copy wins.
+        // Only affects this example app, never a consumer's.
+        if (providers.gradleProperty("deeplinkly.useMavenLocal").orNull == "true") {
+            mavenLocal()
+        }
     }
 }
 

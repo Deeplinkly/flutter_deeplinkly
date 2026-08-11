@@ -1,6 +1,7 @@
 // Generates the per-platform signal catalogues from tool/signals.json.
 //
-//   dart run tool/gen_signals.dart                    # write Kotlin + Swift
+//   dart run tool/gen_signals.dart                    # write Swift + docs
+//   dart run tool/gen_signals.dart --android=<path>   # ...and the Kotlin module
 //   dart run tool/gen_signals.dart --backend=<path>   # ...and the Django module
 //   dart run tool/gen_signals.dart --check            # exit 1 if anything is stale
 //
@@ -9,9 +10,15 @@
 // Swift's 5 — so the tables are generated and the check is what keeps them
 // honest.
 //
-// The backend lives in its own repository, so its path cannot be hard-coded.
-// Pass --backend=/path/to/deeplinkly or set DEEPLINKLY_BACKEND; without either,
-// the Python module is skipped (and --check does not fail on it).
+// Two of the three consumers now live in their own repositories, so their paths
+// cannot be hard-coded:
+//
+//   --android=/path/to/android_deeplinkly  or  DEEPLINKLY_ANDROID
+//   --backend=/path/to/deeplinkly          or  DEEPLINKLY_BACKEND
+//
+// Without either the corresponding output is skipped, and --check does not fail
+// on it. signals.json stays canonical here; each consuming repo runs --check
+// against its own committed copy.
 
 import 'dart:convert';
 import 'dart:io';
@@ -25,6 +32,8 @@ void main(List<String> args) {
   final check = args.contains('--check');
   final backend = _flag(args, '--backend') ??
       Platform.environment['DEEPLINKLY_BACKEND'];
+  final android = _flag(args, '--android') ??
+      Platform.environment['DEEPLINKLY_ANDROID'];
 
   final root = _repoRoot();
   final sourcePath = '$root/tool/signals.json';
@@ -60,16 +69,33 @@ void main(List<String> args) {
   _validate(signals);
 
   final outputs = <String, String>{
-    '$root/android/src/main/kotlin/com/deeplinkly/flutter_deeplinkly/privacy/SignalCatalogue.kt':
-        _kotlin(version, signals),
     '$root/ios/Classes/SignalCatalogue.swift': _swift(version, signals),
     '$root/docs/SIGNALS.md': _markdown(version, signals),
   };
 
+  // The Kotlin catalogue moved to the native Android SDK repo when the Android
+  // implementation was extracted. The Flutter plugin no longer holds a copy —
+  // it consumes the published AAR — so there is nothing to generate here.
+  if (android != null && android.isNotEmpty) {
+    final dir = _trimSlash(android);
+    const module = 'deeplinkly/src/main/kotlin/com/deeplinkly/android_deeplinkly';
+    if (!Directory('$dir/$module').existsSync()) {
+      _fail('--android=$dir does not look like the android_deeplinkly repo '
+          '(no $module)');
+    }
+    outputs['$dir/$module/privacy/SignalCatalogue.kt'] =
+        _kotlin(version, signals, package: 'com.deeplinkly.android_deeplinkly.privacy');
+    // Same reason the backend gets one: the SDK's own parity test needs a local
+    // copy to compare against and cannot reach across repositories.
+    outputs['$dir/tool/signals.json'] = source.readAsStringSync();
+  } else {
+    stderr.writeln(
+      'note: no --android/DEEPLINKLY_ANDROID, skipping SignalCatalogue.kt',
+    );
+  }
+
   if (backend != null && backend.isNotEmpty) {
-    final dir = backend.endsWith('/')
-        ? backend.substring(0, backend.length - 1)
-        : backend;
+    final dir = _trimSlash(backend);
     if (!Directory('$dir/links').existsSync()) {
       _fail('--backend=$dir does not look like the Django repo (no links/ dir)');
     }
@@ -228,10 +254,14 @@ const _banner = '''
 // Regenerate: dart run tool/gen_signals.dart
 ''';
 
-String _kotlin(int version, List<_Signal> signals) {
+/// Trailing slash removed, so `--flag=/path/` and `--flag=/path` behave alike.
+String _trimSlash(String p) =>
+    p.endsWith('/') ? p.substring(0, p.length - 1) : p;
+
+String _kotlin(int version, List<_Signal> signals, {required String package}) {
   final b = StringBuffer()
     ..write(_banner)
-    ..writeln('package com.deeplinkly.flutter_deeplinkly.privacy')
+    ..writeln('package $package')
     ..writeln()
     ..writeln('/** The lowest [AttributionLevel] at which a signal still ships. */')
     ..writeln('enum class SignalTier(val rank: Int) {')

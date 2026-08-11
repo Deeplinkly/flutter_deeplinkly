@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_deeplinkly/models/deeplinkly.dart';
@@ -52,14 +51,6 @@ class _DeepLinkController {
 
 class FlutterDeeplinkly with WidgetsBindingObserver {
   static const _channel = MethodChannel('deeplinkly/channel');
-  static const int _maxEventNameLength = 64;
-  static const int _maxEventParamsCount = 25;
-  static const int _maxEventParamKeyLength = 64;
-  static const int _maxEventParamValueLength = 256;
-
-  /// Namespace the native layers use for the metadata they attach to every
-  /// event (sequence number, client clocks, timezone offset).
-  static const String _reservedParamPrefix = '_dl_';
 
   static final FlutterDeeplinkly _instance = FlutterDeeplinkly._internal();
   factory FlutterDeeplinkly() => _instance;
@@ -186,53 +177,31 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
   }
 
   /// Logs a custom event with optional custom parameters.
-  /// Returns true if accepted by native layer and backend.
+  ///
+  /// Returns true if accepted by the native layer and the backend.
+  ///
+  /// The rules are enforced natively rather than here, so that a native-only
+  /// integration gets the same answer this one does:
+  ///
+  /// - event name: non-empty after trimming, at most 64 characters
+  /// - at most 25 parameters
+  /// - parameter keys: non-empty after trimming, at most 64 characters, and
+  ///   may not start with `_dl_` (reserved for the metadata the SDK attaches
+  ///   to every event, which the backend excludes from the parameter budget)
+  /// - `String` values: at most 256 characters
+  /// - `List`/`Map` values: stored as compact JSON, and it is that encoded
+  ///   form the 256 limit applies to; values that will not encode are rejected
+  /// - any other type than `String`, `num`, `bool`, `List` or `Map` is rejected
+  ///
+  /// A rejected event returns false and sends nothing.
   static Future<bool> logEvent(
     String eventName, {
     Map<String, Object>? parameters,
   }) async {
-    final normalized = eventName.trim();
-    if (normalized.isEmpty || normalized.length > _maxEventNameLength) {
-      return false;
-    }
-    final params = parameters ?? const <String, Object>{};
-    if (params.length > _maxEventParamsCount) {
-      return false;
-    }
-    for (final entry in params.entries) {
-      final key = entry.key.trim();
-      if (key.isEmpty || key.length > _maxEventParamKeyLength) {
-        return false;
-      }
-      // The native layers add their own bookkeeping keys under this prefix, and
-      // the backend excludes them from the parameter budget. Letting a caller
-      // use it would collide with those.
-      if (key.startsWith(_reservedParamPrefix)) {
-        return false;
-      }
-      final value = entry.value;
-      if (value is String) {
-        if (value.length > _maxEventParamValueLength) {
-          return false;
-        }
-      } else if (value is List || value is Map) {
-        // Containers are stored as compact JSON text, so it is the encoded
-        // length the backend measures - and truncates.
-        try {
-          if (jsonEncode(value).length > _maxEventParamValueLength) {
-            return false;
-          }
-        } catch (_) {
-          return false; // not JSON-encodable
-        }
-      } else if (value is! num && value is! bool) {
-        return false;
-      }
-    }
     try {
       final ok = await _channel.invokeMethod<bool>('logEvent', {
-        'event_name': normalized,
-        'parameters': params,
+        'event_name': eventName,
+        'parameters': parameters ?? const <String, Object>{},
       });
       return ok ?? false;
     } catch (e) {

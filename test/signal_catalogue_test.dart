@@ -93,31 +93,52 @@ void main() {
   });
 
   group('generated catalogues', () {
-    final kotlin = File(
-      'android/src/main/kotlin/com/deeplinkly/flutter_deeplinkly/privacy/SignalCatalogue.kt',
-    ).readAsStringSync();
+    // The Kotlin catalogue moved to the native Android SDK repo when the
+    // Android implementation was extracted, so it can only be checked when that
+    // repo is reachable. Looked for via DEEPLINKLY_ANDROID, then at the sibling
+    // path a normal checkout produces.
+    //
+    // The Kotlin assertions below skip rather than fail when it is not — a
+    // contributor with only this repo checked out is not doing anything wrong.
+    // What must never happen is them passing silently, so `skip` carries a
+    // reason and the CI that gates a release sets the variable.
+    final androidRepo = Platform.environment['DEEPLINKLY_ANDROID'] ??
+        '../android_deeplinkly';
+    final kotlinFile = File(
+      '$androidRepo/deeplinkly/src/main/kotlin/com/deeplinkly/'
+      'android_deeplinkly/privacy/SignalCatalogue.kt',
+    );
+    final kotlin =
+        kotlinFile.existsSync() ? kotlinFile.readAsStringSync() : null;
+    final noKotlin = kotlin == null
+        ? 'SignalCatalogue.kt not reachable at ${kotlinFile.path} — set '
+            'DEEPLINKLY_ANDROID to the android_deeplinkly checkout'
+        : null;
+
     final swift = File('ios/Classes/SignalCatalogue.swift').readAsStringSync();
 
-    test('both carry the generated-file banner', () {
-      expect(kotlin, contains('GENERATED FILE'));
+    test('Swift carries the generated-file banner', () {
       expect(swift, contains('GENERATED FILE'));
     });
 
-    test('both pin the same catalogue version as the source', () {
-      final version = doc['catalogue_version'];
-      expect(kotlin, contains('const val VERSION = $version'));
-      expect(swift, contains('static let version = $version'));
+    test('Swift pins the same catalogue version as the source', () {
+      expect(swift, contains('static let version = ${doc['catalogue_version']}'));
     });
+
+    test('Kotlin carries the banner and pins the same version', () {
+      expect(kotlin, contains('GENERATED FILE'));
+      expect(kotlin, contains('const val VERSION = ${doc['catalogue_version']}'));
+    }, skip: noKotlin);
 
     test('Kotlin lists exactly the Android signals', () {
       for (final key in signals.keys) {
-        final present = kotlin.contains('"$key" to SignalSpec(');
+        final present = kotlin!.contains('"$key" to SignalSpec(');
         expect(present, onAndroid(key),
             reason: onAndroid(key)
                 ? '$key is missing from SignalCatalogue.kt — regenerate'
                 : '$key is iOS-only but appears in SignalCatalogue.kt');
       }
-    });
+    }, skip: noKotlin);
 
     test('Swift lists exactly the iOS signals', () {
       for (final key in signals.keys) {
@@ -139,6 +160,6 @@ void main() {
         expect(swift, contains('"${entry.key}": SignalSpec(tier: .$tier,'),
             reason: '${entry.key} has the wrong tier in Swift');
       }
-    });
+    }, skip: noKotlin);
   });
 }
