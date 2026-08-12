@@ -1,0 +1,29 @@
+name: Debug OIDC
+
+on: workflow_dispatch:
+
+permissions:
+  id-token: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
+            echo "ACTIONS_ID_TOKEN_REQUEST_URL is set"
+          else
+            echo "ACTIONS_ID_TOKEN_REQUEST_URL is NOT set"
+          fi
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+            echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is set"
+          else
+            echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is NOT set"
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: dart --version
+      - run: flutter --version
