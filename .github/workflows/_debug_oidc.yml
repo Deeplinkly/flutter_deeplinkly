@@ -28,3 +28,16 @@ jobs:
 
       - run: dart --version
       - run: flutter --version
+
+      - name: Decode OIDC token claims (non-secret metadata only)
+        run: |
+          TOKEN="$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')"
+          PAYLOAD="$(echo "$TOKEN" | cut -d. -f2)"
+          # base64url -> base64, pad, decode
+          PAYLOAD="$(echo "$PAYLOAD" | tr '_-' '/+')"
+          case $(( ${#PAYLOAD} % 4 )) in
+            2) PAYLOAD="${PAYLOAD}==" ;;
+            3) PAYLOAD="${PAYLOAD}=" ;;
+          esac
+          echo "$PAYLOAD" | base64 -d | jq '{iss, aud, repository, ref, sha, workflow_ref, event_name, repository_visibility}'
