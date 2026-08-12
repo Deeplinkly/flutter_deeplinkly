@@ -1,4 +1,4 @@
-## Unreleased
+## 1.9.0
 
 ### Fixed
 
@@ -212,18 +212,7 @@
   catch block, so the field simply never appeared there. It now falls back to
   the legacy API.
 
-## 1.9.0
-
 ### Breaking
-
-* **The automatic pasteboard read is now opt-in and off by default.** 1.8.0 read
-  the pasteboard on first launch to recover a deferred deep link, which showed
-  iOS's "Pasted from…" banner without the integrator having asked for it. To
-  keep 1.8.0 behaviour, either set `DeeplinklyCheckPasteboardOnInstall` to
-  `true` in `Info.plist` (earliest, and what we recommend) or call
-  `FlutterDeeplinkly.setCheckPasteboardOnInstall(true)`.
-
-  Better still, use the new `DeeplinklyPasteButton` and take no banner at all.
 
 * **Android's clipboard fallback is gone entirely.** It was only ever a
   fallback behind the Play Install Referrer, which is signed by Google, needs
