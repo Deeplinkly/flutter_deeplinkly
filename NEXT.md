@@ -101,19 +101,44 @@ suite with a dynamically-selected iPhone simulator, matching
 
 ### 5. Publish `flutter_deeplinkly 1.9.0` when ready for real users
 
-The native Android and iOS packages do not reach Flutter consumers until the
-plugin is published. Before publishing:
+Publishing is now automated: `.github/workflows/publish.yml` fires on any
+pushed tag matching `vX.Y.Z`, checks the tag against `pubspec.yaml`'s
+`version:`, re-runs the exact same `dart` + `ios` jobs as `ci.yml` (via
+`workflow_call`) as a release gate, then runs `flutter pub publish --dry-run`
+and `flutter pub publish --force`. It authenticates to pub.dev via OIDC
+("automated publishing") — no token lives in this repo.
 
-```bash
-dart pub publish --dry-run
-```
+**One-time setup, not done yet — pub.dev dashboard only, cannot be scripted
+from here:**
 
-Confirm the changelog, README installation instructions, repository/homepage
-metadata, license, package contents, and that a clean example install resolves
-the public `Deeplinkly 1.0.0` pod. Then tag the Flutter release and run
-`dart pub publish` from the plugin repository root using the pub.dev owner
-account. Publishing is irreversible, so do the real command only after the
-dry-run and merged CI are green.
+1. On <https://pub.dev/packages/flutter_deeplinkly/admin>, under "Automated
+   publishing", enable GitHub Actions publishing with:
+   - Repository: `Deeplinkly/flutter_deeplinkly`
+   - Workflow filename: `publish.yml`
+   - Tag pattern: `v{{version}}`
+   - Environment: `pub.dev` (matches the `environment: pub.dev` the publish
+     job declares — required for the environment name to line up, optional
+     for the automation to work at all)
+2. Optional but recommended: add required reviewers to the `pub.dev`
+   environment in this repo's Settings → Environments, so a human approves
+   the run between the release gate passing and the actual publish step.
+3. Optional: pub.dev also lets you disable manual (token-based) publishing
+   once automated publishing is trusted, so every release provably went
+   through CI. Not required for the workflow to work.
+
+Before tagging a release:
+
+- retitle CHANGELOG.md's `## Unreleased` heading to the version being
+  released;
+- confirm README installation instructions, repository/homepage metadata,
+  license, and package contents are current (`flutter pub publish --dry-run`
+  locally catches most of this without pushing a tag);
+- confirm a clean example install resolves the public `Deeplinkly 1.0.0` pod.
+
+Then `git tag v1.9.0 && git push origin v1.9.0`. Publishing is irreversible,
+so don't push the tag until the above is done — the workflow's own dry-run
+and CI gate catch mechanical problems, not judgment calls like changelog
+accuracy.
 
 ### 6. Plan beyond CocoaPods Trunk
 

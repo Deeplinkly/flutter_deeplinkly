@@ -1,0 +1,212 @@
+# NOTE: once this file exists, pub stops consulting .gitignore entirely
+# (confirmed empirically — without this duplication, build/ and
+# Podfile.lock leaked into a dry-run archive). So this is .gitignore's
+# content, verbatim, plus the one extra exclusion this file exists for.
+# Keep it in sync with .gitignore by hand; there is no @import.
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+# Libraries should not include pubspec.lock, per https://dart.dev/guides/libraries/private-files#pubspeclock.
+/pubspec.lock
+**/doc/api/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Coverage
+coverage/
+*.lcov
+
+# Test results
+test-results/
+*.test_result
+
+# Android related
+android/.gradle/
+android/build/
+android/local.properties
+android/.idea/
+android/*.iml
+android/*.ipr
+android/*.iws
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# iOS related
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/Flutter/flutter_assets/
+ios/Flutter/flutter_export_environment.sh
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+ios/Pods/
+ios/.flutter-plugins
+ios/.flutter-plugins-dependencies
+ios/Podfile.lock
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/Flutter/flutter_assets/
+ios/Flutter/flutter_export_environment.sh
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+ios/Pods/
+ios/.flutter-plugins
+ios/.flutter-plugins-dependencies
+ios/Podfile.lock
+
+# Example app
+example/.dart_tool/
+example/.flutter-plugins
+example/.flutter-plugins-dependencies
+example/.packages
+example/build/
+example/android/.gradle/
+example/android/build/
+example/android/local.properties
+example/android/.idea/
+example/android/*.iml
+example/android/app/build/
+example/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+example/ios/.symlinks/
+example/ios/Flutter/Flutter.framework
+example/ios/Flutter/Flutter.podspec
+example/ios/Flutter/Generated.xcconfig
+example/ios/Flutter/ephemeral/
+example/ios/Flutter/app.flx
+example/ios/Flutter/app.zip
+example/ios/Flutter/flutter_assets/
+example/ios/Flutter/flutter_export_environment.sh
+example/ios/ServiceDefinitions.json
+example/ios/Runner/GeneratedPluginRegistrant.*
+example/ios/Pods/
+example/ios/.flutter-plugins
+example/ios/.flutter-plugins-dependencies
+example/ios/Podfile.lock
+example/pubspec.lock
+
+# Firebase Test Lab
+firebase-test-results/
+*.apk
+*.aab
+*.apks
+*.test_result
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# Local configuration files
+local.properties
+*.keystore
+*.jks
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# API keys (if stored in files)
+**/api_keys.txt
+**/secrets.properties
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Google Cloud
+.gcloud/
+gcp-key.json
+service-account-key.json
+
+# Test artifacts
+test-results/
+coverage/
+*.test_result
+*.test_artifacts
+
+# Internal engineering docs, not part of the published API surface.
+# Kept plural (docs/) for GitHub readability; pub.dev's package-layout
+# convention wants a package's own doc/ singular, so these are
+# excluded from publishing rather than renamed — renaming would ripple
+# through every in-repo link to them.
+docs/

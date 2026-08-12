@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Lets publish.yml run these same jobs as its release gate, so a tagged
+  # release is never published on a path the PR/push triggers didn't also run.
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.ref }}

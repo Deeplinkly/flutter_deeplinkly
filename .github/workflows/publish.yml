@@ -1,0 +1,57 @@
+name: Publish
+
+# Tag-triggered: push vX.Y.Z to release X.Y.Z to pub.dev.
+#
+# Authenticates via pub.dev's automated (OIDC) publishing — no token is
+# stored in this repo. That has to be configured once on pub.dev's side; see
+# the "Automated publishing" section in docs/NATIVE_SDK_MIGRATION.md's
+# sibling doc, NEXT.md, for the exact settings this workflow expects.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches pubspec.yaml
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="$(sed -n 's/^version: *//p' pubspec.yaml)"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pubspec.yaml version ${VERSION}"
+            exit 1
+          fi
+          echo "releasing ${VERSION}"
+
+  # Never publish on a path the ordinary PR/push CI didn't also run.
+  ci:
+    needs: check-version
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pub.dev
+    permissions:
+      id-token: write # required for pub.dev's OIDC token exchange
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Dry-run publish
+        run: flutter pub publish --dry-run
+
+      - name: Publish to pub.dev
+        run: flutter pub publish --force
