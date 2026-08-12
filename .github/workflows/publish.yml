@@ -32,31 +32,18 @@ jobs:
     needs: check-version
     uses: ./.github/workflows/ci.yml
 
+  # pub.dev's OIDC token is provisioned by the dart-lang/setup-dart action
+  # itself during setup, not negotiated by `dart pub publish` at call time -
+  # confirmed by reading dart-lang/setup-dart's own publish.yml. A hand-rolled
+  # job that skips that action (as this one used to) never gets a credential
+  # provisioned, so `dart pub publish --force` falls back to interactive
+  # Google login regardless of id-token permissions - which just hangs
+  # forever on a runner with no browser. Use the official reusable workflow
+  # rather than re-implement its exact setup-action ordering by hand.
   publish:
     needs: ci
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: pub.dev
     permissions:
       id-token: write # required for pub.dev's OIDC token exchange
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      # dart pub publish, not flutter pub publish: pub.dev's automated (OIDC)
-      # publishing docs and its reusable workflow only ever reference `dart
-      # pub publish`. Confirmed empirically that `flutter pub publish --force`
-      # ignores OIDC entirely and falls back to interactive Google login,
-      # which just hangs forever on a runner with no browser.
-      - name: Dry-run publish
-        run: dart pub publish --dry-run
-
-      - name: Publish to pub.dev
-        run: dart pub publish --force
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      environment: pub.dev
