@@ -165,6 +165,17 @@ every level. Set `DeeplinklyAttributionLevel` in `Info.plist` or the
 `com.deeplinkly.sdk.attribution_level` meta-data to start restricted before any
 Dart runs.
 
+For a plain off switch rather than a middle ground:
+
+```dart
+await FlutterDeeplinkly.setTrackingEnabled(false);
+```
+
+No enrichment, events or error reports are sent while disabled, and the iOS
+pasteboard read is skipped. Deep links still resolve and still reach
+`onResolved`. It persists across launches and wins over
+`setAttributionLevel` — `getAttributionLevel()` reports `none` while it is off.
+
 ### iOS Universal Links
 
 Add an **Associated Domains** capability in Xcode with an entry per link domain:

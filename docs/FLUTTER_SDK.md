@@ -272,7 +272,16 @@ registration), set it natively:
            android:value="reduced" />
 ```
 
-`setTrackingEnabled(false)` still wins and behaves as `none`.
+The off switch is separate, and wins over any level set here:
+
+```dart
+await FlutterDeeplinkly.setTrackingEnabled(false);
+```
+
+It behaves as `none` — `getAttributionLevel()` reports `none` while it is off,
+whatever was set — and additionally stops event and error reporting and skips
+the iOS pasteboard read. Deep links still resolve and still deliver. It persists
+across launches, and is enabled by default.
 
 The SDK does **not** do probabilistic ("fingerprint") matching. Device signals
 are collected for reporting, never to derive an identifier that links a click to

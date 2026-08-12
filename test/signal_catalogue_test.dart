@@ -102,8 +102,8 @@ void main() {
     // contributor with only this repo checked out is not doing anything wrong.
     // What must never happen is them passing silently, so `skip` carries a
     // reason and the CI that gates a release sets the variable.
-    final androidRepo = Platform.environment['DEEPLINKLY_ANDROID'] ??
-        '../android_deeplinkly';
+    final androidRepo =
+        Platform.environment['DEEPLINKLY_ANDROID'] ?? '../android_deeplinkly';
     final kotlinFile = File(
       '$androidRepo/deeplinkly/src/main/kotlin/com/deeplinkly/'
       'android_deeplinkly/privacy/SignalCatalogue.kt',
@@ -115,19 +115,28 @@ void main() {
             'DEEPLINKLY_ANDROID to the android_deeplinkly checkout'
         : null;
 
-    final swift = File('ios/Classes/SignalCatalogue.swift').readAsStringSync();
+    final iosRepo =
+        Platform.environment['DEEPLINKLY_IOS'] ?? '../ios_deeplinkly';
+    final swiftFile = File('$iosRepo/Sources/Deeplinkly/SignalCatalogue.swift');
+    final swift = swiftFile.existsSync() ? swiftFile.readAsStringSync() : null;
+    final noSwift = swift == null
+        ? 'SignalCatalogue.swift not reachable at ${swiftFile.path} — set '
+            'DEEPLINKLY_IOS to the ios_deeplinkly checkout'
+        : null;
 
     test('Swift carries the generated-file banner', () {
       expect(swift, contains('GENERATED FILE'));
-    });
+    }, skip: noSwift);
 
     test('Swift pins the same catalogue version as the source', () {
-      expect(swift, contains('static let version = ${doc['catalogue_version']}'));
-    });
+      expect(
+          swift, contains('static let version = ${doc['catalogue_version']}'));
+    }, skip: noSwift);
 
     test('Kotlin carries the banner and pins the same version', () {
       expect(kotlin, contains('GENERATED FILE'));
-      expect(kotlin, contains('const val VERSION = ${doc['catalogue_version']}'));
+      expect(
+          kotlin, contains('const val VERSION = ${doc['catalogue_version']}'));
     }, skip: noKotlin);
 
     test('Kotlin lists exactly the Android signals', () {
@@ -142,24 +151,27 @@ void main() {
 
     test('Swift lists exactly the iOS signals', () {
       for (final key in signals.keys) {
-        final present = swift.contains('"$key": SignalSpec(');
+        final present = swift!.contains('"$key": SignalSpec(');
         expect(present, onIos(key),
             reason: onIos(key)
                 ? '$key is missing from SignalCatalogue.swift — regenerate'
                 : '$key is Android-only but appears in SignalCatalogue.swift');
       }
-    });
+    }, skip: noSwift);
 
     test('the two agree on the tier of every shared signal', () {
       for (final entry in signals.entries) {
         if (!onAndroid(entry.key) || !onIos(entry.key)) continue;
         final tier = entry.value['tier'] as String;
 
-        expect(kotlin, contains('"${entry.key}" to SignalSpec(SignalTier.${tier.toUpperCase()},'),
+        expect(
+            kotlin,
+            contains(
+                '"${entry.key}" to SignalSpec(SignalTier.${tier.toUpperCase()},'),
             reason: '${entry.key} has the wrong tier in Kotlin');
         expect(swift, contains('"${entry.key}": SignalSpec(tier: .$tier,'),
             reason: '${entry.key} has the wrong tier in Swift');
       }
-    }, skip: noKotlin);
+    }, skip: noKotlin ?? noSwift);
   });
 }

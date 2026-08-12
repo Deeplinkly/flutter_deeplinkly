@@ -1,15 +1,19 @@
+import Deeplinkly
 import Flutter
 import UIKit
 
+/// The Flutter bridge.
+///
+/// Translates method-channel calls onto the `Deeplinkly` facade and owns
+/// nothing, mirroring `flutter_deeplinkly/android/`'s bridge. Everything it
+/// used to reach into — 24 static entry points across 16 types — is behind the
+/// facade now, which is what lets the SDK move to its own repo as a file move
+/// rather than a mass visibility edit.
+///
+/// The three files that import Flutter are this one, `PasteControlFactory` (a
+/// platform view, which cannot move) and `MethodChannelDeepLinkListener`.
 public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
-    // MARK: - Properties
     private var channel: FlutterMethodChannel!
-    private var apiKey: String = ""
-    private var sdkEnabled = false
-    private static var storedApiKey: String?
-
-    private static var staticChannel: FlutterMethodChannel?
-    private static var pendingUniversalLink: URL?
 
     // MARK: - Registration
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -19,7 +23,6 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
             binaryMessenger: registrar.messenger()
         )
         instance.channel = ch
-        staticChannel = ch
         registrar.addMethodCallDelegate(instance, channel: ch)
         // Without this the plugin never sees a Universal Link unless the host
         // app's AppDelegate forwards one by hand, which nothing documented it
@@ -42,44 +45,25 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         // place in its own UI. Registered unconditionally — the view reports
         // its own availability so Dart can fall back below iOS 16.
         registrar.register(
-            PasteControlFactory(
-                messenger: registrar.messenger(),
-                channel: ch,
-                apiKeyProvider: { storedApiKey ?? "" }
-            ),
+            PasteControlFactory(messenger: registrar.messenger()),
             withId: "deeplinkly/paste_button"
         )
 
-        instance.bootstrap()
-
-            // ✅ Flush any pending universal link that arrived before channel setup
-            if let pending = pendingUniversalLink {
-                pendingUniversalLink = nil
-                DeepLinkHandler.handle(url: pending, channel: ch, apiKey: storedApiKey ?? "")
-            }
+        // Idempotent, and flushes any link that reached handleUniversalLink
+        // before now.
+        Deeplinkly.initialize()
     }
 
     // MARK: - Universal Link Bridge
     /// Entry point for a Universal Link.
     ///
-    /// The plugin now registers as an application delegate and picks these up
+    /// The plugin registers as an application delegate and picks these up
     /// itself; this stays public because integration guides told host apps to
     /// call it from their own AppDelegate, and those apps must keep working.
     /// Calling it twice for one link is harmless — the resolve is idempotent
     /// and `AttributionStore.saveOnce` is write-once.
     public static func handleUniversalLink(_ url: URL) {
-        guard let ch = staticChannel else {
-            pendingUniversalLink = url
-            return
-        }
-
-        // ✅ hand off to DeepLinkHandler (same as Android)
-        guard let key = storedApiKey, !key.isEmpty else {
-            pendingUniversalLink = url
-            return
-        }
-        DeepLinkHandler.handle(url: url, channel: ch, apiKey: key)
-
+        Deeplinkly.handleLink(url)
     }
 
     // MARK: - FlutterApplicationLifeCycleDelegate
@@ -92,7 +76,7 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
             let url = userActivity.webpageURL
         else { return false }
-        FlutterDeeplinklyPlugin.handleUniversalLink(url)
+        Deeplinkly.handleLink(url)
         // Not "handled" in the exclusive sense — other plugins may want it too.
         return false
     }
@@ -102,7 +86,7 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
-        FlutterDeeplinklyPlugin.handleUniversalLink(url)
+        Deeplinkly.handleLink(url)
         return false
     }
 
@@ -129,11 +113,11 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         for activity in connectionOptions.userActivities
         where activity.activityType == NSUserActivityTypeBrowsingWeb {
             if let url = activity.webpageURL {
-                FlutterDeeplinklyPlugin.handleUniversalLink(url)
+                Deeplinkly.handleLink(url)
             }
         }
         for context in connectionOptions.urlContexts {
-            FlutterDeeplinklyPlugin.handleUniversalLink(context.url)
+            Deeplinkly.handleLink(context.url)
         }
         return false
     }
@@ -145,7 +129,7 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
         guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
             let url = userActivity.webpageURL
         else { return false }
-        FlutterDeeplinklyPlugin.handleUniversalLink(url)
+        Deeplinkly.handleLink(url)
         return false
     }
 
@@ -154,67 +138,32 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
     @objc(scene:openURLContexts:)
     public func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) -> Bool {
         for context in URLContexts {
-            FlutterDeeplinklyPlugin.handleUniversalLink(context.url)
+            Deeplinkly.handleLink(context.url)
         }
         return false
     }
 
-    // MARK: - Initialization
-    private func bootstrap() {
-        let key =
-            (Bundle(for: FlutterDeeplinklyPlugin.self)
-                .object(forInfoDictionaryKey: "DeeplinklyApiKey") as? String)
-            ?? (Bundle.main.object(forInfoDictionaryKey: "DeeplinklyApiKey") as? String)
-
-        guard let key = key, !key.isEmpty else {
-            self.sdkEnabled = false
-            return
-        }
-
-        self.apiKey = key
-        self.sdkEnabled = true
-        FlutterDeeplinklyPlugin.storedApiKey = key
-
-        // Resolve the WebView user agent before anything wants to send it.
-        // WKWebView may only be constructed on the main thread, while every
-        // collection path runs off it, so this is the one hop that makes the
-        // agent a cached static signal instead of an async collection problem.
-        DeviceProfile.primeUserAgent()
-
-        // The only app-open signal on iOS. Without it a returning user who
-        // never cold-starts the app is invisible — StartupEnrichment fires once
-        // per process, and nothing else observed the foreground.
-        AppOpenReporter.start(apiKey: key)
-
-        StartupEnrichment.schedule(apiKey: apiKey, channel: channel)
-
-        // Capture locally: these closures outlive bootstrap() and have no
-        // reason to keep the plugin instance alive.
-        let channel = self.channel!
-        let apiKey = self.apiKey
-
-        // Pasteboard access has to happen on the main thread, and this is the
-        // only deferred deep link channel iOS offers — see PasteboardHandler.
-        DispatchQueue.main.async {
-            PasteboardHandler.check(channel: channel, apiKey: apiKey)
-        }
-
-        // retryAll blocks on a semaphore per item (15s timeout, up to 50
-        // items). Running it inline froze the UI during plugin registration.
-        DispatchQueue.global(qos: .utility).async {
-            RetryQueue.retryAll(apiKey: apiKey)
-            DeepLinkHandler.drainPendingResolves(channel: channel, apiKey: apiKey)
-        }
+    /// Points the SDK's delivery funnel at this plugin's channel and flushes
+    /// anything buffered while nothing was listening.
+    ///
+    /// Idempotent, and called from both `flutterReady` and the `resumed`
+    /// lifecycle event: an engine that detached and came back needs the
+    /// listener re-pointed, and a flush with an empty buffer sends nothing.
+    private func attachDeepLinkListener() {
+        // SdkRuntime holds the listener for the process lifetime, so there is
+        // nothing to retain here.
+        Deeplinkly.setDeepLinkListener(MethodChannelDeepLinkListener(channel: channel))
     }
-
 
     // MARK: - Flutter MethodChannel Handling
     @objc public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        // Answered before the enabled check: the install id is generated
+        // locally and needs no API key, on both platforms.
         if call.method == "getDeeplinklyId" {
-            result(DeviceIdManager.getOrCreate())
+            result(Deeplinkly.getDeeplinklyId())
             return
         }
-        guard sdkEnabled else {
+        guard Deeplinkly.isEnabled else {
             result([
                 "success": false,
                 "error_code": "SDK_DISABLED",
@@ -222,6 +171,8 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
             ])
             return
         }
+
+        let args = call.arguments as? [String: Any]
 
         switch call.method {
         case "getPlatformVersion":
@@ -231,102 +182,84 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
             // Dart has attached its onDeepLink handler. Anything the native
             // side produced before now — the pasteboard read in particular —
             // is buffered in SdkRuntime and flushes here.
-            SdkRuntime.setFlutterReady(channel)
+            attachDeepLinkListener()
             result(true)
 
         case "onLifecycleChange":
-            let state = (call.arguments as? [String: Any])?["state"] as? String ?? ""
-            Logger.d("Lifecycle: \(state)")
+            let state = args?["state"] as? String ?? ""
             if state == "resumed" {
-                SdkRuntime.setFlutterReady(channel)
+                // Re-attached rather than assumed: an engine that detached and
+                // came back cleared the listener on the way out.
+                attachDeepLinkListener()
+                // Secondary trigger for the open ping, matching Android's
+                // bridge. AppOpenReporter's didBecomeActive observer is the
+                // primary one and normally beats this; both route through the
+                // same rate limit, so a double trigger is a no-op rather than a
+                // duplicate send.
+                Deeplinkly.onForeground()
             }
             result(true)
 
         case "setDebugMode":
-            let enabled = (call.arguments as? [String: Any])?["enabled"] as? Bool ?? false
-            Logger.setDebugMode(enabled)
+            Deeplinkly.setDebugMode(args?["enabled"] as? Bool ?? false)
             result(true)
 
         case "getInstallAttribution":
-            result(AttributionStore.get())
+            result(Deeplinkly.getInstallAttribution())
 
         case "getInitialUniversalLink":
-            if let url = FlutterDeeplinklyPlugin.pendingUniversalLink {
-                FlutterDeeplinklyPlugin.pendingUniversalLink = nil
+            if let url = Deeplinkly.takePendingLink() {
                 result(["url": url.absoluteString])
             } else {
                 result(nil)
             }
 
         case "disableTracking":
-            let disabled = (call.arguments as? [String: Any])?["disabled"] as? Bool ?? false
-            TrackingPreferences.setTrackingDisabled(disabled)
+            Deeplinkly.setTrackingEnabled(!(args?["disabled"] as? Bool ?? false))
             result(true)
 
         case "setAttributionLevel":
-            let raw = (call.arguments as? [String: Any])?["level"] as? String ?? ""
-            guard let level = AttributionLevel(rawValue: raw.lowercased()) else {
+            let raw = (args?["level"] as? String ?? "").lowercased()
+            guard let level = AttributionLevel(rawValue: raw) else {
                 result(false)
                 return
             }
-            AttributionLevel.set(level)
-            result(true)
+            result(Deeplinkly.setAttributionLevel(level))
 
         case "getAttributionLevel":
-            result(AttributionLevel.current.rawValue)
+            result(Deeplinkly.getAttributionLevel().rawValue)
 
         case "setCheckPasteboardOnInstall":
-            let args = call.arguments as? [String: Any]
-            let enabled = args?["enabled"] as? Bool ?? false
-            // Enabling from Dart is inherently late — bootstrap has already run
-            // — so unless the caller opts out, read straight away rather than
-            // waiting for a next launch the pasteboard may not survive to.
-            let checkNow = args?["check_now"] as? Bool ?? true
-            PasteboardHandler.setCheckEnabled(
-                enabled, channel: channel, apiKey: apiKey, runCheckNow: checkNow)
+            // Enabling from Dart is inherently late — initialisation has
+            // already run — so unless the caller opts out, read straight away
+            // rather than waiting for a next launch the pasteboard may not
+            // survive to.
+            Deeplinkly.setCheckPasteboardOnInstall(
+                args?["enabled"] as? Bool ?? false,
+                checkNow: args?["check_now"] as? Bool ?? true
+            )
             result(true)
 
         case "willShowPasteboardBanner":
-            PasteboardHandler.willShowBanner { willShow in result(willShow) }
+            Deeplinkly.willShowPasteboardBanner { willShow in result(willShow) }
 
         case "checkPasteboardNow":
-            PasteboardHandler.check(channel: channel, apiKey: apiKey)
+            Deeplinkly.checkPasteboardNow()
             result(true)
 
         case "setCustomUserId", "setUserId":
-            let userId = (call.arguments as? [String: Any])?["user_id"] as? String
-            UserIdManager.updateCustomUserId(newId: userId, apiKey: apiKey)
+            Deeplinkly.setUserId(args?["user_id"] as? String)
             result(true)
 
         case "logEvent":
-            let eventName = ((call.arguments as? [String: Any])?["event_name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            var parameters = (call.arguments as? [String: Any])?["parameters"] as? [String: Any] ?? [:]
-            guard !eventName.isEmpty else {
-                result(false)
-                return
-            }
-            let seq = UserDefaults.standard.integer(forKey: "dl_event_seq") + 1
-            UserDefaults.standard.set(seq, forKey: "dl_event_seq")
-            parameters["_dl_event_seq"] = String(seq)
-            // Milliseconds since the SDK initialised, not a raw systemUptime
-            // reading. Same ordering power for events from a device with a
-            // wrong wall clock, without also reporting how long the device has
-            // been booted.
-            parameters["_dl_client_elapsed_ms"] = String(SdkInfo.elapsedSinceInit())
-            parameters["_dl_client_wall_epoch_ms"] = String(Int(Date().timeIntervalSince1970 * 1000))
-            parameters["_dl_tz_offset_min"] = String(TimeZone.current.secondsFromGMT() / 60)
-            // Joins this event to the device sample taken in the same visit.
-            // Free: _dl_-prefixed keys are reserved and do not count against
-            // the caller's 25-parameter budget.
-            parameters["_dl_session_id"] = SessionManager.currentSessionId()
-            NetworkUtils.logEvent(eventName: eventName, parameters: parameters, apiKey: apiKey) { ok in
-                DispatchQueue.main.async { result(ok) }
-            }
+            Deeplinkly.logEvent(
+                args?["event_name"] as? String ?? "",
+                parameters: args?["parameters"] as? [String: Any] ?? [:]
+            ) { ok in result(ok) }
 
         case "generateLink":
-            guard let args = call.arguments as? [String: Any],
-                let content = args["content"] as? [String: Any],
-                let options = args["options"] as? [String: Any]
+            guard let content = args?["content"] as? [String: Any],
+                let options = args?["options"] as? [String: Any]
             else {
                 result([
                     "success": false,
@@ -335,21 +268,10 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
                 ])
                 return
             }
-
+            // Merged rather than parsed into models and rebuilt, so the map
+            // Dart built crosses to the backend untouched.
             let payload = content.merging(options, uniquingKeysWith: { $1 })
-            NetworkUtils.generateLink(payload: payload, apiKey: apiKey) { response in
-                DispatchQueue.main.async {
-                    if let response = response as? [String: Any] {
-                        result(response)
-                    } else {
-                        result([
-                            "success": false,
-                            "error_code": "INVALID_RESPONSE",
-                            "error_message": "generateLink returned nil or non-map value",
-                        ])
-                    }
-                }
-            }
+            Deeplinkly.generateLink(payload: payload) { response in result(response) }
 
         default:
             result(FlutterMethodNotImplemented)

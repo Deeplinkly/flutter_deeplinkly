@@ -12,8 +12,9 @@ allprojects {
         // repositories, so adding it only on the plugin side leaves
         // :app:debugRuntimeClasspath unable to find the SDK.
         //
-        // Consulted last, so once the SDK is on Maven Central that copy wins.
-        // Only affects this example app, never a consumer's.
+        // The SDK is on Maven Central now, so this is off by default (see
+        // gradle.properties) and the example resolves it exactly as a consumer
+        // does. Only affects this example app, never a consumer's.
         if (providers.gradleProperty("deeplinkly.useMavenLocal").orNull == "true") {
             mavenLocal()
         }

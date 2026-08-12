@@ -1,6 +1,41 @@
 ## Unreleased
 
+### Fixed
+
+- **iOS enforced none of `logEvent`'s documented validation.** The public Dart
+  API documents the full rule set — name and key lengths, the 25-parameter cap,
+  the reserved `_dl_` prefix, value types and lengths — as "enforced natively
+  rather than here". Android has enforced it since `DeeplinklyEvent`; iOS only
+  trimmed the name and checked it was non-empty, so an app could send a 10KB
+  name, a hundred parameters, or keys that smuggle past the backend's parameter
+  budget. Now enforced identically on both platforms. A rejected event returns
+  false and sends nothing, as documented.
+
+- **iOS's `_dl_event_seq` counter could hand out duplicates.** It was a plain
+  `UserDefaults.integer(forKey:) + 1`, so two events logged together read the
+  same value and both wrote it back — the counter that exists to *order* events
+  was the one thing that could not be relied on to. It is now a read-modify-write
+  under a lock, followed by a synchronous write so a process killed immediately
+  after cannot reissue a number it already sent.
+
+### Added
+
+- **`FlutterDeeplinkly.setTrackingEnabled(bool)`.** Documented since it shipped,
+  but it existed only on `MethodChannelFlutterDeeplinkly` and so was not
+  reachable from the public API. Both native sides already handled the
+  `disableTracking` call it makes; only the Dart entry point was missing.
+
 ### Changed
+
+- **iOS: the SDK no longer depends on Flutter either.** Everything below the
+  method channel now sits behind a new `Deeplinkly` facade mirroring Android's,
+  and `FlutterDeeplinklyPlugin` translates method-channel calls onto it and owns
+  nothing. **Nothing changes for apps using this plugin**: same Dart API, same
+  `deeplinkly/channel` methods, same envelope, same `Info.plist` keys, and no
+  persisted state is renamed.
+
+  Groundwork for a standalone native iOS SDK from the same source, so the two
+  can never drift.
 
 - **Android: the SDK no longer depends on Flutter.** Everything below the
   method channel — deep link resolution, the install referrer, attribution,
