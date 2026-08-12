@@ -50,8 +50,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # dart pub publish, not flutter pub publish: pub.dev's automated (OIDC)
+      # publishing docs and its reusable workflow only ever reference `dart
+      # pub publish`. Confirmed empirically that `flutter pub publish --force`
+      # ignores OIDC entirely and falls back to interactive Google login,
+      # which just hangs forever on a runner with no browser.
       - name: Dry-run publish
-        run: flutter pub publish --dry-run
+        run: dart pub publish --dry-run
 
       - name: Publish to pub.dev
-        run: flutter pub publish --force
+        run: dart pub publish --force
