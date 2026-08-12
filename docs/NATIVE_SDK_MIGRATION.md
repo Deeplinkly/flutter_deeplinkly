@@ -1,9 +1,11 @@
 # Native SDK migration — status and handoff
 
 Living status doc for the extraction of the platform SDKs out of the Flutter
-plugin. **Android is done and published. The iOS extraction is complete
-locally: sources, tests, privacy resources, package manifests, catalogue
-tooling, and Flutter-plugin consumption have crossed the boundary.**
+plugin. **Android is done and published. The iOS extraction is done and
+published too: sources, tests, privacy resources, package manifests, catalogue
+tooling, and Flutter-plugin consumption have crossed the boundary, and the
+Flutter example now consumes the released `Deeplinkly 1.0.0` pod from Trunk
+rather than a local path.**
 
 Last updated: 2026-08-12.
 
@@ -27,7 +29,7 @@ bridge over it. One implementation, three distribution channels.
 |---|---|---|---|
 | Native Android SDK | `Deeplinkly/android_deeplinkly` | `com.deeplinkly.android_deeplinkly` | **done**, `com.deeplinkly:deeplinkly-android:1.0.0` |
 | Flutter plugin | `Deeplinkly/flutter_deeplinkly` | `com.deeplinkly.flutter_deeplinkly` | **done**, consumes the above |
-| Native iOS SDK | local `ios_deeplinkly` sibling; remote not created | `Deeplinkly` | **extracted locally; publishing pending** |
+| Native iOS SDK | `Deeplinkly/ios_deeplinkly` | `Deeplinkly` | **done**, `Deeplinkly 1.0.0` on SwiftPM and CocoaPods Trunk |
 
 Local checkouts are siblings under `~/StudioProjects/`. Several tools assume
 that layout (see [Cross-repo tooling](#cross-repo-tooling)).
@@ -287,10 +289,15 @@ privacy manifest; the IDFA manifest stays an opt-in template for host apps.
 
 ### Still to do
 
-- Create the `Deeplinkly/ios_deeplinkly` remote and add CI/publishing.
-- Release `Deeplinkly 1.9.0` to CocoaPods and tag the Swift package.
-- Remove the example Podfile's `../../../ios_deeplinkly` override after the
-  release so integration tests resolve the published pod.
+Nothing — the native `1.0.0` release is complete. `Deeplinkly 1.0.0` is
+published on SwiftPM and CocoaPods Trunk, its release CI is configured with
+the protected `COCOAPODS_TRUNK_TOKEN` secret, and the example Podfile's
+`../../../ios_deeplinkly` override has been removed and verified: `Podfile.lock`
+resolves `Deeplinkly (1.0.0)` from Trunk with no local-path or `EXTERNAL
+SOURCES` entry, and the 23 app-hosted iOS tests pass against it.
+
+Remaining work is tracked in `NEXT.md`: Flutter-repository CI, and publishing
+`flutter_deeplinkly` itself once there is a real user base to publish for.
 
 **Key alignment is done.** The only real cross-platform storage-key divergence
 was the retry queue: `dl_pending_retries` (Android) vs `sdk_retry_queue` (iOS).

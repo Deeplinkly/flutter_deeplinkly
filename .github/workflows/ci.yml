@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: flutter_deeplinkly
+
+      # Sibling checkouts for the cross-repo signal-drift gate below. Letting
+      # the catalogue test skip its native assertions when these are missing
+      # would make this CI gate meaningless, so both are always fetched here.
+      - uses: actions/checkout@v4
+        with:
+          repository: Deeplinkly/ios_deeplinkly
+          path: ios_deeplinkly
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Deeplinkly/android_deeplinkly
+          path: android_deeplinkly
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        working-directory: flutter_deeplinkly
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: flutter_deeplinkly
+        run: flutter analyze
+
+      - name: Test
+        working-directory: flutter_deeplinkly
+        env:
+          DEEPLINKLY_IOS: ../ios_deeplinkly
+          DEEPLINKLY_ANDROID: ../android_deeplinkly
+        run: flutter test
+
+      - name: Check generated signal catalogues are current
+        working-directory: flutter_deeplinkly
+        run: |
+          dart run tool/gen_signals.dart --check \
+            --ios=../ios_deeplinkly --android=../android_deeplinkly
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Flutter dependencies
+        run: |
+          flutter pub get
+          cd example && flutter pub get
+
+      - name: Install CocoaPods dependencies
+        working-directory: example/ios
+        run: pod install
+
+      - name: Run hosted iOS tests
+        working-directory: example
+        run: |
+          set -o pipefail
+          SIMULATOR_ID="$(
+            xcrun simctl list devices available -j |
+              ruby -rjson -e '
+                devices = JSON.parse(STDIN.read).fetch("devices").values.flatten
+                phone = devices.find { |device| device["isAvailable"] && device["name"].start_with?("iPhone") }
+                abort "No available iPhone simulator" unless phone
+                puts phone.fetch("udid")
+              '
+          )"
+          xcodebuild test \
+            -workspace ios/Runner.xcworkspace -scheme Runner \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_ID}"

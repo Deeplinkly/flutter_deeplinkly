@@ -30,9 +30,6 @@ flutter_ios_podfile_setup
 target 'Runner' do
   use_frameworks!
 
-  # Local seam until Deeplinkly is published to CocoaPods. The plugin podspec
-  # declares the same 1.9.0 dependency a consumer will resolve remotely.
-  pod 'Deeplinkly', :path => '../../../ios_deeplinkly'
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths

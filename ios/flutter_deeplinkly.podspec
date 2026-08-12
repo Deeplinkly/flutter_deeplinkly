@@ -15,7 +15,7 @@ Flutter Deeplinking Project
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.dependency 'Deeplinkly', '1.9.0'
+  s.dependency 'Deeplinkly', '1.0.0'
 
   # Stays at 12.0. ATTrackingManager and ASIdentifierManager are iOS 14 at
   # *runtime*, not at deployment target: they are weak-linked and guarded with
