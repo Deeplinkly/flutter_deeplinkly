@@ -79,14 +79,15 @@ besides the pre-existing `avoid_print` info in the example app), and
 `xcodebuild test` run against `Runner.xcworkspace` passed all **23** tests
 against the published pod.
 
-### 3. Finish and merge the Flutter extraction branch
+### 3. Finish and merge the Flutter extraction branch — **done**
 
-The current branch is `ios-test-suite`. `docs/NATIVE_SDK_MIGRATION.md`'s
-“Still to do” section now says the native `1.0.0` release is complete. Next:
-
-- review the complete diff, commit it, push `ios-test-suite`, and open/merge a
-  PR into the Flutter repo's default branch;
-- do not move or recreate the native `1.0.0` tag.
+`docs/NATIVE_SDK_MIGRATION.md`'s “Still to do” section now says the native
+`1.0.0` release is complete. PR #1 (`ios-test-suite` → `main`) went green on
+CI — including catching and fixing a real cross-repo drift, an unpushed
+`android_deeplinkly` commit that updated `tool/signals.json`'s comments,
+pushed to that repo's `origin/main` before the gate passed — and was merged.
+`ios-test-suite` is deleted, both locally and on `origin`. The native `1.0.0`
+tag was left untouched throughout.
 
 ### 4. Add Flutter-repository CI — **done**
 
