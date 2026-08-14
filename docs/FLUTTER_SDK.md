@@ -6,7 +6,7 @@ This page documents Deeplinkly's Flutter SDK integration flow and runtime API.
 
 ```yaml
 dependencies:
-  flutter_deeplinkly: ^1.9.0
+  flutter_deeplinkly: ^1.9.1
 ```
 
 ```bash
@@ -378,7 +378,6 @@ Every deep link arrives in the same envelope on both platforms:
 {
   'click_id': 'ab12…',            // null if the backend did not recognise the click
   'params': {'screen': 'home'},   // the link's own parameters
-  'probability': 0.92,            // deferred-match confidence, when the backend sends it
 }
 ```
 

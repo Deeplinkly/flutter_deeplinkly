@@ -47,7 +47,7 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
      * cannot leave two of these delivering the same link.
      *
      * `raw` is forwarded unchanged so Dart's envelope stays exactly
-     * `{click_id, params, probability}`.
+     * `{click_id, params}`.
      */
     private val deepLinkListener = DeeplinklyDeepLinkListener { link ->
         channel.invokeMethod("onDeepLink", link.raw)

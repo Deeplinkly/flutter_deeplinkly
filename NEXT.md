@@ -99,7 +99,7 @@ an `ios` job (macOS runner; `pod install` then the hosted `xcodebuild test`
 suite with a dynamically-selected iPhone simulator, matching
 `ios_deeplinkly`'s own CI style).
 
-### 5. Publish `flutter_deeplinkly 1.9.0` when ready for real users
+### 5. Publish `flutter_deeplinkly 1.9.1` when ready for real users
 
 Publishing is now automated: `.github/workflows/publish.yml` fires on any
 pushed tag matching `vX.Y.Z`, checks the tag against `pubspec.yaml`'s
@@ -135,7 +135,7 @@ Before tagging a release:
   locally catches most of this without pushing a tag);
 - confirm a clean example install resolves the public `Deeplinkly 1.0.0` pod.
 
-Then `git tag v1.9.0 && git push origin v1.9.0`. Publishing is irreversible,
+Then `git tag v1.9.1 && git push origin v1.9.1`. Publishing is irreversible,
 so don't push the tag until the above is done — the workflow's own dry-run
 and CI gate catch mechanical problems, not judgment calls like changelog
 accuracy.
@@ -298,7 +298,7 @@ Full list in `docs/NATIVE_SDK_MIGRATION.md`; the ones that bite during this
 work:
 
 - **The backend is production.** One customer is live on an older SDK. The wire
-  format is frozen: signal names, the `{click_id, params, probability}`
+  format is frozen: signal names, the `{click_id, params}`
   envelope, the `/resolve`, `/enrich`, `/event` payload shapes.
 - **Persisted state must survive upgrades.** No key renames without a migration
   (which is exactly what step 2 is).

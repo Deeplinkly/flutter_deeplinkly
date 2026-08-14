@@ -17,7 +17,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_deeplinkly: ^1.9.0
+  flutter_deeplinkly: ^1.9.1
 ```
 
 Then run:
@@ -226,7 +226,7 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    // Every link arrives as {click_id, params, probability?} on both platforms;
+    // Every link arrives as {click_id, params} on both platforms;
     // `params` holds the link's own parameters.
     FlutterDeeplinkly.instance.deepLinkStream.listen((payload) {
       final params = payload['params'] as Map? ?? {};

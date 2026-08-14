@@ -38,11 +38,9 @@ final class MethodChannelDeepLinkListenerTests: XCTestCase {
         MethodChannelDeepLinkListener(channel: channel).onDeepLink([
             "click_id": "c1",
             "params": ["utm_source": "news", "count": 3],
-            "probability": 0.87,
         ])
 
         let args = messenger.sent.first?.arguments as? [String: Any]
-        XCTAssertEqual(args?["probability"] as? Double, 0.87)
         let params = args?["params"] as? [String: Any]
         XCTAssertEqual(params?["utm_source"] as? String, "news")
         XCTAssertEqual(params?["count"] as? Int, 3)

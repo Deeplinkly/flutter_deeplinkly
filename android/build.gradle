@@ -1,5 +1,14 @@
 group = "com.deeplinkly.flutter_deeplinkly"
-version = "1.0-SNAPSHOT"
+
+// Read from pubspec rather than written here. This value is cosmetic for a
+// pub-published plugin — nothing resolves the AAR by coordinate — but a
+// hand-maintained second copy of the version is a copy that goes stale, and
+// "1.0-SNAPSHOT" in the build scan of a 1.9.0 release is exactly that stale
+// copy being read by someone trying to work out which build they have.
+version = file("../pubspec.yaml").readLines()
+    .find { it.startsWith("version:") }
+    ?.replaceFirst(/^version:\s*/, "")
+    ?.trim() ?: "1.0-SNAPSHOT"
 
 buildscript {
     ext.kotlin_version = "2.2.0"
@@ -43,7 +52,23 @@ allprojects {
 }
 
 apply plugin: "com.android.library"
-apply plugin: "kotlin-android"
+
+// Kotlin is applied conditionally rather than declared, because Flutter is
+// removing the plugin's right to bring its own. From AGP 9 the Kotlin support
+// is built into AGP itself, and a plugin that applies KGP will fail its host
+// app's build; before AGP 9 nothing applies it for us on older Flutter, so the
+// plugin must still apply it itself or this module does not compile.
+//
+// The apply goes through pluginManager rather than `apply plugin:` on purpose.
+// Flutter greps plugin build files for that literal syntax to warn host apps
+// about un-migrated plugins, and a conditional apply is not what that warning
+// is for — it fires on the text, not on the behaviour.
+//
+// See https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
+def agpMajor = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize('.')[0] as int
+if (agpMajor < 9 && !pluginManager.hasPlugin("org.jetbrains.kotlin.android")) {
+    pluginManager.apply("org.jetbrains.kotlin.android")
+}
 
 android {
     namespace = "com.deeplinkly.flutter_deeplinkly"
@@ -53,10 +78,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11
     }
 
     sourceSets {
@@ -87,6 +108,15 @@ android {
     }
 }
 
+// The replacement for `android.kotlinOptions`, which is going away with the
+// KGP that owned it. Left unset, Kotlin compiles to its own default target
+// while Java compiles to 11 above, and AGP fails the build over the mismatch.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
+    }
+}
+
 dependencies {
     // The SDK itself. Everything below the method channel — deep link
     // resolution, the install referrer, attribution, the queues, retries,
@@ -102,7 +132,7 @@ dependencies {
     // core-ktx, plus the compileOnly treatment of play-services-ads-identifier
     // that keeps the AD_ID permission out of host manifests. Redeclaring any
     // of them is how the two builds start to disagree.
-    api 'com.deeplinkly:deeplinkly-android:1.0.0'
+    api 'com.deeplinkly:deeplinkly-android:1.1.0'
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.17.0")

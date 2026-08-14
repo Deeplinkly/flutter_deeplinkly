@@ -1,3 +1,50 @@
+## 1.9.1
+
+### Changed
+
+- **The bundled native Android SDK moves to `deeplinkly-android` 1.1.0**, which
+  is where the two Android fixes below actually live. iOS is unchanged.
+
+- **The Android side of the plugin no longer applies the Kotlin Gradle Plugin.**
+  Flutter is moving to AGP's built-in Kotlin support, and a plugin that applies
+  KGP itself will fail its host app's build from AGP 9 — host apps building
+  this plugin were already being warned about it by name. KGP is now applied
+  only when the host's AGP is older than 9, where nothing else applies it, so
+  the plugin builds unchanged on current Flutter and stops being the thing that
+  breaks host builds later. `kotlinOptions` moved to the `kotlin.compilerOptions`
+  DSL that replaces it; the JVM target is still 11. No change is required in
+  host apps. See
+  [the migration guide](https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors).
+
+### Fixed
+
+- **Android sent duplicate enrichments where iOS sent one** (fixed in the
+  native Android SDK, and reaching the plugin via the `deeplinkly-android`
+  1.1.0 bump above). iOS latches each enrichment on what it reports — the
+  source plus the click id, code or user id it carries — so a report arriving
+  twice collapses to one; Android had no latch at all, so every path that can
+  fire twice for one report (a queued resolve replayed after the live one, a
+  warm start re-reading stored attribution) sent it twice. The latch closes
+  only on a delivered payload, so an enrichment that failed and was queued is
+  still retried.
+
+- **`setUserId` never linked the login on Android.** The enrichment it sends
+  carries a user id and no attribution, and Android gated every non-lifecycle
+  send on attribution being present — so the call was assembled, filtered and
+  then dropped. iOS has always sent it (`force`), which is now what Android
+  does too. Apps that acquired users organically were the ones affected: with
+  no UTM or click id on the install, the id had nothing to ride along with.
+
+### Removed
+
+- **The `probability` field is gone from the deep link envelope**, on both
+  native SDKs and in every SDK's docs. The backend's fingerprint-based
+  probabilistic matching was removed some time ago — `/resolve` has never sent
+  a `probability` value — so the field was always `null`/absent in practice.
+  Docs describing it as "deferred-match confidence" implied a fuzzy-matching
+  fallback that does not exist; matching is deterministic only (click id or
+  install referrer). The envelope is now `{click_id, params}` everywhere.
+
 ## 1.9.0
 
 ### Fixed

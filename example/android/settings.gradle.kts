@@ -17,10 +17,13 @@ pluginManagement {
     }
 }
 
+// Kept at or above the floors `flutter build` warns below — it drops support
+// for older AGP/KGP on its own schedule, and an example app that trips those
+// warnings on every build teaches consumers to ignore them.
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "8.9.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.0" apply false
+    id("com.android.application") version "8.13.0" apply false
+    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }
 
 include(":app")

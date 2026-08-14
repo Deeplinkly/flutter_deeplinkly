@@ -27,7 +27,7 @@ bridge over it. One implementation, three distribution channels.
 
 | Artifact | Repo | Package | Status |
 |---|---|---|---|
-| Native Android SDK | `Deeplinkly/android_deeplinkly` | `com.deeplinkly.android_deeplinkly` | **done**, `com.deeplinkly:deeplinkly-android:1.0.0` |
+| Native Android SDK | `Deeplinkly/android_deeplinkly` | `com.deeplinkly.android_deeplinkly` | **done**, `com.deeplinkly:deeplinkly-android:1.1.0` |
 | Flutter plugin | `Deeplinkly/flutter_deeplinkly` | `com.deeplinkly.flutter_deeplinkly` | **done**, consumes the above |
 | Native iOS SDK | `Deeplinkly/ios_deeplinkly` | `Deeplinkly` | **done**, `Deeplinkly 1.0.0` on SwiftPM and CocoaPods Trunk |
 
@@ -59,7 +59,7 @@ depends on and imports its `Deeplinkly` module. Its public surface remains
 
 **The backend is production.** One customer is live on an older SDK and is not
 upgrading soon. Treat the wire format as frozen: signal names, the
-`{click_id, params, probability}` envelope, the `/resolve`, `/enrich`,
+`{click_id, params}` envelope, the `/resolve`, `/enrich`,
 `/event` payload shapes. SDK *versioning* is relaxed — there is no urgency to
 publish to pub.dev, and no real user base waiting on a plugin release.
 
@@ -148,7 +148,7 @@ that sibling is not reachable, so a contributor with one repo checked out is
 not failed. **Release CI must set both native repo variables** or catalogue
 drift for the absent checkout passes silently.
 
-**Where the SDK comes from.** `com.deeplinkly:deeplinkly-android:1.0.0` is on
+**Where the SDK comes from.** `com.deeplinkly:deeplinkly-android:1.1.0` is on
 Maven Central, and both the plugin and the example resolve it from there — the
 example builds exactly the way a consumer's app does. `deeplinkly.useMavenLocal`
 is `false` in `example/android/gradle.properties`.

@@ -583,6 +583,16 @@ honest and cheap; or leave the parse in as forward-compatible plumbing and
 delete only the doc references, which is defensible if a `/match` endpoint is
 actually on the roadmap. Do not leave the docs as they are either way.
 
+> **✅ Fixed — 2026-08-12.** Took the first option: `probability` parsing removed
+> from `DeeplinklyDeepLink.kt`/`DeeplinklyNetwork.kt` (Android) and
+> `NetworkUtils.swift`/`DeeplinklyDeepLinkListener.swift` (iOS), and every doc
+> reference (`README.md`, `docs/FLUTTER_SDK.md`, `docs/NATIVE_SDK_MIGRATION.md`,
+> `NEXT.md`, `CHANGELOG.md`, and the equivalent READMEs/docs in
+> `android_deeplinkly`/`ios_deeplinkly`) updated to the real `{click_id, params}`
+> envelope. Tests that used `probability` as an example key for "arbitrary keys
+> survive the codec/forwarding" assertions were rewritten without it rather than
+> deleted.
+
 ### 9. Two response-shape inconsistencies in the backend — confirmed, backend-side
 
 Not SDK bugs, but the SDK is what would break on them:
@@ -660,9 +670,8 @@ Findings 1–6 are done. No open item is a correctness bug: what is left is
 documentation that misleads, and inconsistencies that are currently harmless by
 luck rather than by design.
 
-1. **Finding #8 (`probability`).** Decide whether it is roadmap or dead, then
-   make the docs say so. Cheap, and it is the only user-facing documentation
-   that contradicts the "no probabilistic matching" position.
+1. ~~**Finding #8 (`probability`).**~~ ✅ **Done — 2026-08-12.** Removed, not
+   roadmapped; see the note under Finding #8 above.
 2. **Finding #9 + §7 asymmetries** (`tenant_user_id` shape, enrichment dedupe,
    startup-wait timeout, retry counts, `getInitialUniversalLink`). Tidying.
 3. **The §7 product decision** — whether iOS deferred coverage is good enough,
