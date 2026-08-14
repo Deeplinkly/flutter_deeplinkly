@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_deeplinkly'
-  s.version          = '1.9.0'
+  s.version          = '1.9.1'
   s.summary          = 'Flutter Deeplinkly SDK'
   s.description      = <<-DESC
 Flutter Deeplinking Project

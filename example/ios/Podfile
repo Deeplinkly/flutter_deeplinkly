@@ -1,5 +1,10 @@
-# Uncomment this line to define a global platform for your project
-# platform :ios, '13.0'
+# Stated rather than inferred. Left unset, CocoaPods falls back to the Runner
+# target's own deployment target and only says so in a warning; when Flutter
+# raised `Flutter.podspec` to iOS 15 in 3.47 that fallback stopped satisfying
+# it and `pod install` failed on a version number nothing in this repo had
+# written down. This is the example app's floor, not the plugin's — the
+# podspec still supports iOS 12 hosts.
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
