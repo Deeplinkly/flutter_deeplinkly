@@ -157,11 +157,17 @@ public class FlutterDeeplinklyPlugin: NSObject, FlutterPlugin {
 
     // MARK: - Flutter MethodChannel Handling
     @objc public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        // Answered before the enabled check: the install id is generated
-        // locally and needs no API key, on both platforms.
-        if call.method == "getDeeplinklyId" {
+        // Local privacy/identity operations do not need an API key, so they
+        // remain available when SDK configuration is incomplete.
+        switch call.method {
+        case "getDeeplinklyId":
             result(Deeplinkly.getDeeplinklyId())
             return
+        case "resetPrivacyData":
+            result(Deeplinkly.resetPrivacyData())
+            return
+        default:
+            break
         }
         guard Deeplinkly.isEnabled else {
             result([

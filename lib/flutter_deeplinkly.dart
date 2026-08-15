@@ -35,15 +35,15 @@ enum DeeplinklyAttributionLevel {
 /// Stream-based deep link controller
 class _DeepLinkController {
   final _controller = StreamController<Map<dynamic, dynamic>>.broadcast();
-  
+
   Stream<Map<dynamic, dynamic>> get stream => _controller.stream;
-  
+
   void add(Map<dynamic, dynamic> data) {
     if (!_controller.isClosed) {
       _controller.add(data);
     }
   }
-  
+
   void close() {
     _controller.close();
   }
@@ -66,7 +66,8 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
 
   /// Stream of deep link events
   /// Multiple listeners can subscribe to this stream
-  Stream<Map<dynamic, dynamic>> get deepLinkStream => _deepLinkController.stream;
+  Stream<Map<dynamic, dynamic>> get deepLinkStream =>
+      _deepLinkController.stream;
 
   /// Initialize the plugin and set up method channel handler
   /// Must be called before accessing deepLinkStream
@@ -74,20 +75,20 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
     if (_isInitialized) {
       return; // Already initialized
     }
-    
+
     final instance = FlutterDeeplinkly.instance;
-    
+
     // Set up lifecycle observer
     if (!_isLifecycleObserving) {
       WidgetsBinding.instance.addObserver(instance);
       _isLifecycleObserving = true;
     }
-    
+
     _channel.setMethodCallHandler((call) async {
       try {
         if (call.method == "onDeepLink") {
           final args = Map<dynamic, dynamic>.from(call.arguments);
-          
+
           // Add to stream - all listeners will receive it
           instance._deepLinkController.add(args);
         }
@@ -95,9 +96,9 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
         // Silently handle error without crashing
       }
     });
-    
+
     _isInitialized = true;
-    
+
     // Mark Flutter as ready to receive deep links
     _markFlutterReady();
   }
@@ -107,7 +108,7 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
     if (_isFlutterReady) {
       return;
     }
-    
+
     try {
       await _channel.invokeMethod('flutterReady');
       _isFlutterReady = true;
@@ -129,11 +130,9 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
     // PlatformDispatcher.onError) recorded a fatal crash on every foreground or
     // background transition. The rejection has to be caught on the Future.
     unawaited(
-      _channel
-          .invokeMethod('onLifecycleChange', {
-            'state': state.name, // e.g., 'resumed', 'paused'
-          })
-          .catchError((Object _) => null),
+      _channel.invokeMethod('onLifecycleChange', {
+        'state': state.name, // e.g., 'resumed', 'paused'
+      }).catchError((Object _) => null),
     );
 
     // Mark Flutter as ready when app resumes
@@ -146,11 +145,13 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
   AppLifecycleState? get currentLifecycleState => _currentLifecycleState;
 
   /// Check if app is in foreground
-  bool get isInForeground => _currentLifecycleState == AppLifecycleState.resumed;
+  bool get isInForeground =>
+      _currentLifecycleState == AppLifecycleState.resumed;
 
   static Future<Map<String, String>> getInstallAttribution() async {
     try {
-      final result = await _channel.invokeMapMethod<String, String>('getInstallAttribution');
+      final result = await _channel
+          .invokeMapMethod<String, String>('getInstallAttribution');
       return Map<String, String>.from(result ?? const {});
     } catch (e) {
       return const {};
@@ -215,11 +216,10 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
   static void onResolved(void Function(Map<dynamic, dynamic> params) callback) {
     if (!_isInitialized) {
       throw StateError(
-        'FlutterDeeplinkly.init() must be called before onResolved(). '
-        'Call init() in your main() function before runApp().'
-      );
+          'FlutterDeeplinkly.init() must be called before onResolved(). '
+          'Call init() in your main() function before runApp().');
     }
-    
+
     // Subscribe to stream and call callback
     FlutterDeeplinkly.instance.deepLinkStream.listen((data) {
       try {
@@ -228,7 +228,7 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
         // Silently handle error
       }
     });
-    
+
     // Ensure Flutter is marked as ready
     if (!_isFlutterReady) {
       _markFlutterReady();
@@ -244,7 +244,8 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
         'content': content.toJson(),
         'options': options.toJson(),
       };
-      final rawResult = await _channel.invokeMethod<Map<dynamic, dynamic>>('generateLink', payload);
+      final rawResult = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+          'generateLink', payload);
       if (rawResult == null) {
         return DeeplinklyResult(
           success: false,
@@ -278,8 +279,10 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
   ///
   /// The switch for a consent flow's "don't track me". While disabled the SDK
   /// sends no enrichment, no events and no error reports, and skips the iOS
-  /// pasteboard read. Deep links still resolve and are still delivered to
-  /// [onResolved] — the link a user tapped keeps working.
+  /// pasteboard read. Pending reporting retries are deleted. Deep links still
+  /// resolve and are still delivered to [onResolved] — the link a user tapped
+  /// keeps working — but functional requests omit the stable Deeplinkly ID and
+  /// custom user ID while tracking is disabled.
   ///
   /// Persists across launches on both platforms. Enabled by default.
   ///
@@ -292,6 +295,21 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
       final ok = await _channel.invokeMethod<bool>('disableTracking', {
         'disabled': !enabled,
       });
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Delete Deeplinkly's locally stored privacy data.
+  ///
+  /// Removes the stable Deeplinkly ID, custom user ID, attribution, cached
+  /// device profile, session/event state, pasteboard state, and pending queues.
+  /// Tracking remains disabled after deletion; explicitly call
+  /// [setTrackingEnabled] with `true` only after the user opts back in.
+  static Future<bool> resetPrivacyData() async {
+    try {
+      final ok = await _channel.invokeMethod<bool>('resetPrivacyData');
       return ok ?? false;
     } catch (_) {
       return false;
@@ -378,11 +396,11 @@ class FlutterDeeplinkly with WidgetsBindingObserver {
     bool checkNow = true,
   }) async {
     try {
-      final ok = await _channel
-          .invokeMethod<bool>('setCheckPasteboardOnInstall', {
-            'enabled': enabled,
-            'check_now': checkNow,
-          });
+      final ok =
+          await _channel.invokeMethod<bool>('setCheckPasteboardOnInstall', {
+        'enabled': enabled,
+        'check_now': checkNow,
+      });
       return ok ?? false;
     } catch (_) {
       return false;

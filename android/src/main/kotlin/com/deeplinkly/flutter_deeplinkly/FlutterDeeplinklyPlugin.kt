@@ -70,12 +70,17 @@ class FlutterDeeplinklyPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        // Answered before the enabled gate: the id is generated locally and
-        // needs no API key, so it stays available to an app whose manifest
-        // meta-data is missing.
-        if (call.method == "getDeeplinklyId") {
-            result.success(Deeplinkly.getDeeplinklyId())
-            return
+        // Local privacy/identity operations do not need an API key, so they
+        // remain available when manifest metadata is missing.
+        when (call.method) {
+            "getDeeplinklyId" -> {
+                result.success(Deeplinkly.getDeeplinklyId())
+                return
+            }
+            "resetPrivacyData" -> {
+                result.success(Deeplinkly.resetPrivacyData())
+                return
+            }
         }
         if (!Deeplinkly.isEnabled) {
             result.success(DISABLED_ENVELOPE)

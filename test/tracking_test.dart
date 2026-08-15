@@ -53,4 +53,22 @@ void main() {
 
     expect(await FlutterDeeplinkly.setTrackingEnabled(false), isFalse);
   });
+
+  test('privacy reset is forwarded to native', () async {
+    expect(await FlutterDeeplinkly.resetPrivacyData(), isTrue);
+    expect(calls.single.method, 'resetPrivacyData');
+    expect(calls.single.arguments, isNull);
+  });
+
+  test('privacy reset failure returns false', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'resetPrivacyData') {
+        throw PlatformException(code: 'failed');
+      }
+      return true;
+    });
+
+    expect(await FlutterDeeplinkly.resetPrivacyData(), isFalse);
+  });
 }

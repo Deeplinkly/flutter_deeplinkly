@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_deeplinkly'
-  s.version          = '1.9.1'
+  s.version          = '1.9.2'
   s.summary          = 'Flutter Deeplinkly SDK'
   s.description      = <<-DESC
 Flutter Deeplinking Project
@@ -15,7 +15,7 @@ Flutter Deeplinking Project
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.dependency 'Deeplinkly', '1.0.0'
+  s.dependency 'Deeplinkly', '1.0.1'
 
   # Stays at 12.0. ATTrackingManager and ASIdentifierManager are iOS 14 at
   # *runtime*, not at deployment target: they are weak-linked and guarded with

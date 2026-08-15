@@ -1,6 +1,6 @@
-# Attribution & matching: how this SDK actually works
+# Deterministic attribution: how this SDK actually works
 
-Audit of `flutter_deeplinkly` v1.9.0, Android + iOS, as of the current working
+Audit of `flutter_deeplinkly` v1.9.2, Android + iOS, as of the current working
 tree. Covers every path by which a click becomes an attributed install or an
 `onDeepLink` delivery, what each device signal is for, and what is still wrong.
 
@@ -21,9 +21,8 @@ this document:
 
 On iOS a visitor who does not tap through the interstitial (or whose clipboard
 was overwritten, or whose app never renders the paste button) has **no deferred
-attribution at all**. There is no probabilistic backstop by design. If that
-coverage gap is unacceptable, adding a backstop is a product decision, not a bug
-fix — see [Coverage and its limits](#coverage-and-its-limits).
+attribution at all**. That limitation is explicit: Deeplinkly does not replace a
+missing deterministic token with device correlation.
 
 ---
 
@@ -305,27 +304,13 @@ every signal is collected in-app, after install.
 
 ---
 
-## 5. Where "probabilistic matching" would go, and why it isn't there
+## 5. The deterministic matching boundary
 
-The scaffolding exists and is unused:
-
-- `/resolve` responses may carry a `probability` field, which both platforms
-  parse and forward to Dart (`extractParamsFromJson` / `extractParams`).
-- `AttributionLevel.REDUCED`'s doc calls its dropped tier "the high-entropy
-  hardware signals that only exist to support probabilistic matching".
-
-But there is **no client entry point for a probabilistic match**. `/resolve` is
-only ever called with a `click_id` or a `code`; there is no "here is my device,
-which click was mine?" request. `/enrich` is fire-and-forget — neither platform
-reads a matched click out of the response. So `probability` can only ever be a
-confidence the backend attaches to a *deterministic* resolve.
-
-If probabilistic matching is ever wanted, the honest shape is: a first-launch
-`POST /match` carrying the `full`-tier signals plus IP (server-observed), gated
-on `AttributionLevel == full`, whose response can produce a deferred
-`onDeepLink`. That is a new endpoint and a new consent story, not a config flag.
-Until then, `docs/FLUTTER_SDK.md:255` states the position accurately and should
-stay as written.
+`/resolve` is called only with a `click_id` or short `code`. It never receives a
+device profile, and `/enrich` is reporting rather than a matching endpoint. The
+obsolete `probability` response field and client parsing were removed. There is
+no device-correlation fallback or matcher roadmap; missing deterministic
+identity means no attribution.
 
 ---
 
@@ -630,10 +615,9 @@ On iOS 16+ any probable web URL on the clipboard triggers a read, and the SDK
 discards non-matching hosts only *after* the banner has shown. A user who
 copied a news article before opening the app gets a prompt for nothing.
 
-If the resulting coverage still is not good enough, the answer is a deliberate
-probabilistic-match endpoint with its own consent gate (§5) — not loosening
-anything in the current design. Branch is the useful reference point here and
-does not have a better answer: see §10.
+If the resulting coverage is not good enough, that remains a documented product
+limitation. Device correlation is not the fallback. Branch is a useful reference
+point here and does not have a better answer: see §10.
 
 ---
 
@@ -674,9 +658,9 @@ luck rather than by design.
    roadmapped; see the note under Finding #8 above.
 2. **Finding #9 + §7 asymmetries** (`tenant_user_id` shape, enrichment dedupe,
    startup-wait timeout, retry counts, `getInitialUniversalLink`). Tidying.
-3. **The §7 product decision** — whether iOS deferred coverage is good enough,
-   or whether a deliberate `/match` endpoint with its own consent gate is
-   warranted. The one item here that is a choice rather than a cleanup.
+3. **The §7 product limitation** — iOS deferred coverage depends on a
+   deterministic token. A device-based `/match` fallback is deliberately out of
+   scope.
 
 A note for whoever picks these up: findings 2, 3 and 4 were all iOS bugs, and
 none was caught by a test, because there is no test target for the plugin's

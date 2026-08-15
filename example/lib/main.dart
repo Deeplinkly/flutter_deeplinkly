@@ -32,7 +32,7 @@ class _MyAppState extends State<MyApp> {
     _deeplinkSubscription = FlutterDeeplinkly.instance.deepLinkStream.listen((
       data,
     ) {
-      print('Received deep link: $data');
+      debugPrint('Received deep link: $data');
       if (mounted) {
         setState(() {
           _deeplinkData = data;

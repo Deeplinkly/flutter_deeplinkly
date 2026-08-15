@@ -1,3 +1,17 @@
+## 1.9.2
+
+### Privacy
+
+- Tracking opt-out now deletes pending native reporting retries, prevents
+  in-flight failures from recreating them, and re-checks consent during retry
+  drains on Android and iOS.
+- Functional link resolution/generation still works while tracking is off, but
+  no longer carries the stable Deeplinkly ID or custom user ID.
+- Added `FlutterDeeplinkly.resetPrivacyData()` to delete local identifiers,
+  attribution, cached device/session state, pasteboard state, and queues. The
+  reset deliberately leaves tracking disabled.
+- Bundles `deeplinkly-android` 1.1.1 and `Deeplinkly` iOS 1.0.1.
+
 ## 1.9.1
 
 ### Changed
@@ -300,7 +314,7 @@
   | Level | Effect |
   |---|---|
   | `full` | Everything. The default, and the pre-1.9.0 behaviour |
-  | `reduced` | Drops screen geometry, pixel ratio, core count, device model, and the Android advertising ID and Android ID. No fingerprint block on resolve |
+  | `reduced` | Drops screen geometry, pixel ratio, core count, device model, and the Android advertising ID and Android ID. Resolve carries no device profile at any level |
   | `minimal` | Only the install id, app build, and the link being reported on. Nothing describing the device |
   | `none` | No enrichment sent at all. Links still resolve and still deliver |
 

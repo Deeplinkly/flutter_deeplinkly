@@ -17,7 +17,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_deeplinkly: ^1.9.1
+  flutter_deeplinkly: ^1.9.2
 ```
 
 Then run:
@@ -171,10 +171,20 @@ For a plain off switch rather than a middle ground:
 await FlutterDeeplinkly.setTrackingEnabled(false);
 ```
 
-No enrichment, events or error reports are sent while disabled, and the iOS
-pasteboard read is skipped. Deep links still resolve and still reach
-`onResolved`. It persists across launches and wins over
+No enrichment, events or error reports are sent while disabled, pending report
+retries are deleted, and the iOS pasteboard read is skipped. Deep links still
+resolve and still reach `onResolved`, but functional requests omit the stable
+Deeplinkly ID and custom user ID. It persists across launches and wins over
 `setAttributionLevel` — `getAttributionLevel()` reports `none` while it is off.
+
+For a deletion request, remove all locally stored Deeplinkly identifiers,
+attribution, device/session state, and queues:
+
+```dart
+await FlutterDeeplinkly.resetPrivacyData();
+```
+
+The reset leaves tracking disabled. Re-enable it only after a fresh opt-in.
 
 ### iOS Universal Links
 
@@ -328,4 +338,3 @@ adb shell am broadcast -a com.android.vending.INSTALL_REFERRER -n your.package.n
 ## License
 
 MIT License. See [`LICENSE`](LICENSE).
-

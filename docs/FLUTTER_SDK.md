@@ -6,7 +6,7 @@ This page documents Deeplinkly's Flutter SDK integration flow and runtime API.
 
 ```yaml
 dependencies:
-  flutter_deeplinkly: ^1.9.1
+  flutter_deeplinkly: ^1.9.2
 ```
 
 ```bash
